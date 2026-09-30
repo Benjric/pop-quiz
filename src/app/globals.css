@@ -106,6 +106,80 @@ body {
     transform: translateY(-24px);
   }
 }
+/* In-game: a wrong answer shakes, the last seconds pulse, counters bump,
+   wrong tiles fade back, the right tile gets a little bounce. */
+@keyframes pq-shake {
+  0%,
+  100% {
+    transform: none;
+  }
+  20%,
+  60% {
+    transform: translateX(-10px) rotate(-3deg);
+  }
+  40%,
+  80% {
+    transform: translateX(10px) rotate(3deg);
+  }
+}
+@keyframes pq-heartbeat {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes pq-bump {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes pq-dim {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.35;
+  }
+}
+@keyframes pq-celebrate {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.04);
+    box-shadow: 0 0 0 10px rgba(255, 255, 255, 0.55);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+}
+@utility anim-shake {
+  animation: pq-shake 0.5s ease-in-out both;
+}
+@utility anim-heartbeat {
+  animation: pq-heartbeat 0.45s ease-out;
+}
+@utility anim-bump {
+  animation: pq-bump 0.35s ease-out;
+}
+@utility anim-dim {
+  animation: pq-dim 0.6s ease-out both;
+}
+@utility anim-celebrate {
+  animation: pq-celebrate 0.9s ease-out both;
+}
 @utility anim-rise {
   animation: pq-rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
@@ -128,8 +202,16 @@ body {
   .anim-rise,
   .anim-grow,
   .anim-pop,
-  .anim-fade-out {
+  .anim-fade-out,
+  .anim-shake,
+  .anim-heartbeat,
+  .anim-bump,
+  .anim-celebrate {
     animation: none;
+  }
+  .anim-dim {
+    animation: none;
+    opacity: 0.35;
   }
   .confetti-piece {
     display: none;

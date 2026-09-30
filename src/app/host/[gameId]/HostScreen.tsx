@@ -42,11 +42,15 @@ export function HostScreen({ gameId }: { gameId: string }) {
   return (
     <main className="relative flex min-h-dvh flex-col">
       {state.game.status === "LOBBY" && <Lobby state={state} startButton={nextButton} onKick={(id) => control({ action: "kick", playerId: id })} />}
-      {state.game.status === "QUESTION" && <Question state={state} secondsLeft={secondsLeft} skipButton={nextButton} />}
-      {state.game.status === "REVEAL" && (
-        <Reveal state={state} nextButton={nextButton} autoAdvance={<AutoAdvance state={state} nextIn={nextIn} onPause={hold} busy={busy} />} />
+      {state.game.status === "QUESTION" && (
+        <Question key={`q${state.game.currentIndex}`} state={state} secondsLeft={secondsLeft} skipButton={nextButton} />
       )}
-      {state.game.status === "LEADERBOARD" && <Leaderboard state={state} nextButton={nextButton} />}
+      {state.game.status === "REVEAL" && (
+        <Reveal key={`r${state.game.currentIndex}`} state={state} nextButton={nextButton} autoAdvance={<AutoAdvance state={state} nextIn={nextIn} onPause={hold} busy={busy} />} />
+      )}
+      {state.game.status === "LEADERBOARD" && (
+        <Leaderboard key={`l${state.game.currentIndex}`} state={state} nextButton={nextButton} />
+      )}
       {state.game.status === "ENDED" && <FinalResults state={state} />}
       {error ? (
         <p role="alert" className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-xl bg-danger px-4 py-2 font-bold text-white">
@@ -174,14 +178,17 @@ function Lobby({
         <section className="flex min-h-0 flex-col gap-[3vh]">
           <div className="flex items-baseline justify-between">
             <h2 className="font-display text-[clamp(28px,2.8vw,44px)] font-extrabold">Players</h2>
-            <span className="font-display text-[clamp(40px,4vw,60px)] font-extrabold text-brand">{players.length}</span>
+            <span key={players.length} className="anim-bump font-display text-[clamp(40px,4vw,60px)] font-extrabold text-brand">
+              {players.length}
+            </span>
           </div>
           <ul className="flex flex-1 flex-wrap content-start gap-3 overflow-y-auto">
             {players.length === 0 ? (
               <li className="text-[clamp(16px,1.4vw,22px)] font-semibold text-muted">Waiting for players to join…</li>
             ) : (
               players.map((p) => (
-                <li key={p.id}>
+                // New players pop in as they join.
+                <li key={p.id} className="anim-pop">
                   <button
                     type="button"
                     onClick={() => {
@@ -216,15 +223,25 @@ function Question({
   skipButton: React.ReactNode;
 }) {
   const question = state.question!;
+  const urgent = secondsLeft !== null && secondsLeft > 0 && secondsLeft <= 5;
   return (
     <div className="flex flex-1 flex-col gap-[3vh] px-[4vw] py-[4vh]">
       <div className="flex items-center justify-between gap-4">
         <QuestionPill state={state} />
         <div className="flex items-center gap-[2vw]">
           <span className="text-[clamp(16px,1.4vw,22px)] font-bold text-muted">
-            {state.answeredCount} / {state.activeCount} answered
+            <span key={state.answeredCount} className="inline-block anim-bump text-ink">
+              {state.answeredCount}
+            </span>{" "}
+            / {state.activeCount} answered
           </span>
-          <span className="flex aspect-square w-[clamp(64px,6.5vw,104px)] items-center justify-center rounded-full bg-ink font-display text-[clamp(28px,3vw,48px)] font-extrabold text-white">
+          <span
+            // Turns red and pulses every second for the last five.
+            key={urgent ? secondsLeft : "calm"}
+            className={`flex aspect-square w-[clamp(64px,6.5vw,104px)] items-center justify-center rounded-full font-display text-[clamp(28px,3vw,48px)] font-extrabold text-white transition-colors ${
+              urgent ? "anim-heartbeat bg-[#C8382B]" : "bg-ink"
+            }`}
+          >
             {secondsLeft ?? ""}
           </span>
         </div>
@@ -269,11 +286,23 @@ function Reveal({
           const count = state.distribution[i] ?? 0;
           const isCorrect = i === question.correctIndex;
           return (
-            <div key={i} className={`flex w-[clamp(64px,9vw,140px)] flex-col items-center gap-2 ${isCorrect ? "" : "opacity-40"}`}>
-              <span className="font-display text-[clamp(22px,2.4vw,36px)] font-extrabold">{count}</span>
+            <div
+              key={i}
+              className={`flex w-[clamp(64px,9vw,140px)] flex-col items-center gap-2 ${isCorrect ? "" : "anim-dim"}`}
+              // Wrong answers fade back once the bars have grown.
+              style={isCorrect ? undefined : { animationDelay: "1.1s" }}
+            >
+              <span className="anim-pop font-display text-[clamp(22px,2.4vw,36px)] font-extrabold" style={{ animationDelay: `${0.5 + i * 0.12}s` }}>
+                {count}
+              </span>
               <div
-                className="w-full rounded-t-xl"
-                style={{ background: style.bg, height: `${(count / most) * 22}vh`, minHeight: 8 }}
+                className="anim-grow w-full rounded-t-xl"
+                style={{
+                  background: style.bg,
+                  height: `${(count / most) * 22}vh`,
+                  minHeight: 8,
+                  animationDelay: `${i * 0.12}s`,
+                }}
               />
               <div className="flex w-full items-center justify-center gap-2 rounded-b-xl py-2" style={{ background: style.bg }}>
                 <ChoiceShape index={i} size={28} />
@@ -302,7 +331,8 @@ function Leaderboard({ state, nextButton }: { state: HostState; nextButton: Reac
         {top.map((p, i) => (
           <li
             key={p.nickname}
-            className={`flex items-center gap-6 rounded-3xl px-8 ${
+            style={{ animationDelay: `${i * 0.12}s` }}
+            className={`anim-rise flex items-center gap-6 rounded-3xl px-8 ${
               i === 0 ? "h-[clamp(64px,10.5vh,96px)] bg-brand text-white" : "h-[clamp(56px,9.5vh,88px)] border-2 border-line bg-white"
             }`}
           >
@@ -344,7 +374,10 @@ function AutoAdvance({
     <div className="flex items-center gap-3">
       <span className="flex items-center gap-3 text-[clamp(16px,1.4vw,22px)] font-bold text-muted">
         {last ? "Results in" : "Next question in"}
-        <span className="flex aspect-square w-[clamp(52px,5vw,72px)] items-center justify-center rounded-full bg-ink font-display text-[clamp(24px,2.4vw,36px)] font-extrabold text-white">
+        <span
+          key={nextIn ?? "none"}
+          className="anim-bump flex aspect-square w-[clamp(52px,5vw,72px)] items-center justify-center rounded-full bg-ink font-display text-[clamp(24px,2.4vw,36px)] font-extrabold text-white"
+        >
           {nextIn ?? ""}
         </span>
       </span>
@@ -370,7 +403,7 @@ function QuestionPill({ state }: { state: HostState }) {
 
 function QuestionCard({ text }: { text: string }) {
   return (
-    <div className="card flex flex-1 items-center justify-center rounded-4xl p-[3vw] text-center">
+    <div className="anim-rise card flex flex-1 items-center justify-center rounded-4xl p-[3vw] text-center">
       <p className="max-w-275 font-display text-[clamp(28px,3.9vw,60px)] leading-[1.15] font-extrabold">{text}</p>
     </div>
   );
@@ -381,14 +414,16 @@ function Tiles({ choices, correctIndex }: { choices: string[]; correctIndex?: nu
     <div className={`grid gap-[1.4vw] ${choices.length > 4 ? "grid-cols-3" : "grid-cols-2"}`}>
       {choices.map((choice, i) => {
         const style = choiceStyle(i);
-        const dim = correctIndex !== undefined && i !== correctIndex;
+        const revealing = correctIndex !== undefined;
+        // Question: tiles pop in one after another. Answer: the right one
+        // bounces, the others fade back.
+        const anim = !revealing ? "anim-pop" : i === correctIndex ? "anim-celebrate" : "anim-dim";
+        const delay = !revealing ? 0.25 + i * 0.1 : i === correctIndex ? 0.2 : 0.1;
         return (
           <div
             key={i}
-            className={`flex min-h-[clamp(72px,14vh,128px)] items-center gap-[1.6vw] rounded-3xl px-[2vw] py-3 text-[clamp(20px,2.4vw,36px)] font-bold transition-opacity ${
-              dim ? "opacity-35" : ""
-            }`}
-            style={{ background: style.bg, color: style.fg }}
+            className={`${anim} flex min-h-[clamp(72px,14vh,128px)] items-center gap-[1.6vw] rounded-3xl px-[2vw] py-3 text-[clamp(20px,2.4vw,36px)] font-bold`}
+            style={{ background: style.bg, color: style.fg, animationDelay: `${delay}s` }}
           >
             <ChoiceShape index={i} size={44} />
             <span className="flex-1 wrap-break-word">{choice}</span>

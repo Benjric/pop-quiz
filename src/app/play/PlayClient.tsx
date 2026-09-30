@@ -184,9 +184,16 @@ function InGame({ state, refresh, leave }: { state: PlayerState; refresh: () => 
     case "LOBBY":
       return (
         <Screen tone="brand">
-          <CheckBadge color="#4B2BB5" />
-          <h1 className="font-display text-phone-hero font-extrabold">You&apos;re in!</h1>
-          <p className="max-w-full rounded-full bg-white px-6 py-2.5 font-display text-[clamp(22px,7vw,32px)] font-extrabold wrap-break-word text-brand">
+          <span className="anim-pop">
+            <CheckBadge color="#4B2BB5" />
+          </span>
+          <h1 className="anim-rise font-display text-phone-hero font-extrabold" style={{ animationDelay: "0.15s" }}>
+            You&apos;re in!
+          </h1>
+          <p
+            className="anim-pop max-w-full rounded-full bg-white px-6 py-2.5 font-display text-[clamp(22px,7vw,32px)] font-extrabold wrap-break-word text-brand"
+            style={{ animationDelay: "0.35s" }}
+          >
             {me.nickname}
           </p>
           <p className="text-phone-lg font-bold">Look for your name on the big screen</p>
@@ -201,20 +208,22 @@ function InGame({ state, refresh, leave }: { state: PlayerState; refresh: () => 
         return (
           <Screen tone="brand" header={<StatusBar state={state} />}>
             <span
-              className="flex aspect-square w-[clamp(80px,min(28vw,16dvh),112px)] items-center justify-center rounded-3xl"
+              className="anim-pop flex aspect-square w-[clamp(80px,min(28vw,16dvh),112px)] items-center justify-center rounded-3xl"
               style={{ background: style.bg }}
             >
               <ChoiceShape index={answered.choiceIndex} size={56} />
             </span>
-            <h1 className="font-display text-phone-hero font-extrabold">Answer locked in</h1>
-            <p className="text-phone-lg font-bold text-[#E4DDFB]">Waiting for everyone else…</p>
+            <h1 className="anim-rise font-display text-phone-hero font-extrabold" style={{ animationDelay: "0.1s" }}>
+              Answer locked in
+            </h1>
+            <p className="animate-pulse text-phone-lg motion-reduce:animate-none font-bold text-[#E4DDFB]">Waiting for everyone else…</p>
           </Screen>
         );
       }
       if (secondsLeft === 0) {
         return (
           <Screen tone="ink" header={<StatusBar state={state} />}>
-            <h1 className="font-display text-phone-hero font-extrabold">Time&apos;s up!</h1>
+            <h1 className="anim-shake font-display text-phone-hero font-extrabold">Time&apos;s up!</h1>
             <p className="text-phone-lg font-bold text-white/80">Look at the big screen for the answer</p>
           </Screen>
         );
@@ -253,7 +262,11 @@ function InGame({ state, refresh, leave }: { state: PlayerState; refresh: () => 
               </span>
               {secondsLeft !== null ? (
                 <span
-                  className="flex h-9 min-w-9 shrink-0 items-center justify-center rounded-full bg-ink px-2 font-display font-extrabold text-white"
+                  // Red and pulsing for the last five seconds.
+                  key={secondsLeft > 0 && secondsLeft <= 5 ? secondsLeft : "calm"}
+                  className={`flex h-9 min-w-9 shrink-0 items-center justify-center rounded-full px-2 font-display font-extrabold text-white ${
+                    secondsLeft > 0 && secondsLeft <= 5 ? "anim-heartbeat bg-[#C8382B]" : "bg-ink"
+                  }`}
                   aria-label={`${secondsLeft} seconds left`}
                 >
                   {secondsLeft}
@@ -261,7 +274,7 @@ function InGame({ state, refresh, leave }: { state: PlayerState; refresh: () => 
               ) : null}
             </span>
           </div>
-          <h1 className="font-display text-phone-question font-extrabold wrap-break-word">{question.text}</h1>
+          <h1 className="anim-rise font-display text-phone-question font-extrabold wrap-break-word">{question.text}</h1>
           {error ? (
             <p role="alert" className="rounded-xl bg-danger-soft px-3 py-2 text-sm font-semibold text-danger">
               {error}
@@ -283,8 +296,14 @@ function InGame({ state, refresh, leave }: { state: PlayerState; refresh: () => 
                   key={i}
                   type="button"
                   onClick={() => answer(i)}
-                  className="flex min-h-18 min-w-0 cursor-pointer flex-col items-center justify-center gap-[clamp(4px,1.5dvh,12px)] rounded-[20px] p-2 text-[clamp(14px,min(4.6vw,3dvh),20px)] leading-tight font-bold wrap-break-word transition-transform active:scale-95 landscape:flex-row landscape:px-4"
-                  style={{ background: style.bg, color: style.fg }}
+                  className="anim-pop flex min-h-18 min-w-0 cursor-pointer flex-col items-center justify-center gap-[clamp(4px,1.5dvh,12px)] rounded-[20px] p-2 text-[clamp(14px,min(4.6vw,3dvh),20px)] leading-tight font-bold wrap-break-word transition-transform active:scale-95 landscape:flex-row landscape:px-4"
+                  style={{
+                    background: style.bg,
+                    color: style.fg,
+                    animationDelay: `${0.15 + i * 0.07}s`,
+                    // Let go of the pop's transform afterwards so the tap-press still works.
+                    animationFillMode: "backwards",
+                  }}
                 >
                   <span className="w-[clamp(28px,min(12vw,7dvh),56px)] shrink-0">
                     <ChoiceShape index={i} size={56} className="h-auto w-full" />
@@ -304,12 +323,21 @@ function InGame({ state, refresh, leave }: { state: PlayerState; refresh: () => 
       if (mine?.correct) {
         return (
           <Screen tone="green" header={<StatusBar state={state} />}>
-            <CheckBadge color="#1D7A4C" />
-            <h1 className="font-display text-phone-hero font-extrabold">Correct!</h1>
-            <p className="rounded-full bg-white px-6 py-2.5 font-display text-[clamp(24px,8vw,34px)] font-extrabold text-success">
+            <span className="anim-pop">
+              <CheckBadge color="#1D7A4C" />
+            </span>
+            <h1 className="anim-rise font-display text-phone-hero font-extrabold" style={{ animationDelay: "0.15s" }}>
+              Correct!
+            </h1>
+            <p
+              className="anim-pop rounded-full bg-white px-6 py-2.5 font-display text-[clamp(24px,8vw,34px)] font-extrabold text-success"
+              style={{ animationDelay: "0.4s" }}
+            >
               + {formatNumber(mine.points ?? 0)}
             </p>
-            <p className="text-phone-lg font-bold">You&apos;re in {ordinal(me.rank)} place</p>
+            <p className="anim-rise text-phone-lg font-bold" style={{ animationDelay: "0.6s" }}>
+              You&apos;re in {ordinal(me.rank)} place
+            </p>
             <p className="font-semibold text-[#D5EFE1]">{upNext}</p>
           </Screen>
         );
@@ -317,14 +345,17 @@ function InGame({ state, refresh, leave }: { state: PlayerState; refresh: () => 
       return (
         <Screen tone={mine ? "red" : "ink"} header={<StatusBar state={state} />}>
           <span
-            className="flex aspect-square w-[clamp(72px,min(26vw,14dvh),112px)] items-center justify-center rounded-full bg-white"
+            className="anim-shake flex aspect-square w-[clamp(72px,min(26vw,14dvh),112px)] items-center justify-center rounded-full bg-white"
+            style={{ animationDelay: "0.1s" }}
             aria-hidden
           >
             <svg viewBox="0 0 24 24" className="w-1/2" fill="none" stroke={mine ? "#C8382B" : "#1E1B3A"} strokeWidth="3" strokeLinecap="round">
               <path d="M6 6 L18 18 M18 6 L6 18" />
             </svg>
           </span>
-          <h1 className="font-display text-phone-hero font-extrabold">{mine ? "Not quite" : "No answer"}</h1>
+          <h1 className="anim-rise font-display text-phone-hero font-extrabold" style={{ animationDelay: "0.15s" }}>
+            {mine ? "Not quite" : "No answer"}
+          </h1>
           {correctText ? (
             <p className="text-phone-lg font-bold wrap-break-word">
               The answer was <span className="rounded-lg bg-white/20 px-2 py-0.5">{correctText}</span>
@@ -339,8 +370,10 @@ function InGame({ state, refresh, leave }: { state: PlayerState; refresh: () => 
     case "LEADERBOARD":
       return (
         <Screen tone="brand" header={<StatusBar state={state} />}>
-          <p className="text-phone-lg font-bold text-[#E4DDFB]">You&apos;re in</p>
-          <h1 className="font-display text-phone-giant font-extrabold">{ordinal(me.rank)}</h1>
+          <p className="anim-rise text-phone-lg font-bold text-[#E4DDFB]">You&apos;re in</p>
+          <h1 className="anim-pop font-display text-phone-giant font-extrabold" style={{ animationDelay: "0.2s" }}>
+            {ordinal(me.rank)}
+          </h1>
           <p className="text-phone-lg font-bold">
             of {me.playerCount} · {formatNumber(me.score)} points
           </p>
