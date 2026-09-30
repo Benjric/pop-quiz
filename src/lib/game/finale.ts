@@ -7,7 +7,7 @@
  */
 export const LIST_FROM = 4;
 export const LIST_TO = 10;
-export const ROW_STEP_S = 0.5; // between list rows
+export const ROW_STEP_S = 0.8; // between list rows
 export const LIST_HOLD_S = 1.2; // how long the full list stays up
 export const BAR_DELAY_S = { 3: 0.3, 2: 1.4, 1: 2.6 } as const; // podium, by place: the top 3 take their time
 export const BAR_S = 0.9;

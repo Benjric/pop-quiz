@@ -11,11 +11,11 @@ const PLACES = [
 ] as const;
 
 /**
- * The real phone screen, fed a finished game where the viewer is "Sofia" in
- * 5th of 10: places 10–4 count down, then "And the winners are…" while the
- * podium plays, then the result.
+ * The real phone screen, fed a finished game of 10: places 10–4 count down,
+ * then the final screen. The viewer is "Sofia" (5th), or with `winner` "Mia"
+ * (1st), who sees "Top 3!" until the podium has played.
  */
-export function PhoneEndingPreview() {
+export function PhoneEndingPreview({ winner = false }: { winner?: boolean }) {
   const [endedAt, setEndedAt] = useState<number | null>(null);
 
   useEffect(() => {
@@ -38,7 +38,9 @@ export function PhoneEndingPreview() {
     serverNow: endedAt,
     question: null,
     correctIndex: null,
-    me: { nickname: "Sofia", score: 6555, rank: 5, playerCount: 10, kicked: false },
+    me: winner
+      ? { nickname: "Mia", score: 8420, rank: 1, playerCount: 10, kicked: false }
+      : { nickname: "Sofia", score: 6555, rank: 5, playerCount: 10, kicked: false },
     myAnswer: null,
   };
 

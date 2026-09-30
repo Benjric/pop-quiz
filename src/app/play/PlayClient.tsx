@@ -407,35 +407,43 @@ export function InGame({ state, refresh, leave }: { state: PlayerState; refresh:
           </Screen>
         );
       }
-      if (finaleEndsAt !== null && finaleLeft !== 0) {
-        // Don't spoil the podium: the projector is still counting down.
+      {
+        // One final screen. While the podium plays on the projector, a top-3
+        // player sees "Top 3!" instead of their place, so their phone doesn't
+        // spoil it; the place pops in once the winner is on the big screen.
+        const podiumPlaying = finaleEndsAt !== null && finaleLeft !== 0;
+        const hidePlace = podiumPlaying && me.rank >= 1 && me.rank <= 3;
         return (
           <Screen tone="brand">
-            <span className="anim-heartbeat flex aspect-square w-[clamp(80px,min(28vw,16dvh),112px)] items-center justify-center rounded-full bg-white text-brand [animation-iteration-count:infinite] [animation-duration:1s]">
-              <Trophy className="w-1/2" size={56} strokeWidth={2.5} aria-hidden />
-            </span>
-            <h1 className="anim-rise font-display text-phone-hero font-extrabold">And the winners are…</h1>
-            <p className="animate-pulse text-phone-lg font-bold text-[#E4DDFB] motion-reduce:animate-none">
-              Look at the big screen!
+            <p className="anim-rise text-phone-lg font-bold text-[#E4DDFB]">
+              {hidePlace ? "Game over · you made it to the" : "Game over · you finished"}
             </p>
+            {hidePlace ? (
+              <div key="top3" className="anim-pop flex flex-col items-center gap-3" style={{ animationDelay: "0.2s" }}>
+                <span className="anim-heartbeat flex aspect-square w-[clamp(72px,min(24vw,14dvh),104px)] items-center justify-center rounded-full bg-white text-brand [animation-duration:1s] [animation-iteration-count:infinite]">
+                  <Trophy className="w-1/2" size={52} strokeWidth={2.5} aria-hidden />
+                </span>
+                <h1 className="font-display text-phone-giant font-extrabold">Top 3!</h1>
+              </div>
+            ) : (
+              <h1 key="place" className="anim-pop font-display text-phone-giant font-extrabold" style={{ animationDelay: "0.2s" }}>
+                {ordinal(me.rank)}
+              </h1>
+            )}
+            <p className="anim-rise text-phone-lg font-bold" style={{ animationDelay: "0.4s" }}>
+              {hidePlace ? "Watch the big screen for your place!" : `${formatNumber(me.score)} points · of ${me.playerCount}`}
+            </p>
+            {podiumPlaying && !hidePlace ? (
+              <p className="animate-pulse font-semibold text-[#E4DDFB] motion-reduce:animate-none">
+                The top 3 are on the big screen!
+              </p>
+            ) : null}
+            <div className="anim-rise" style={{ animationDelay: "0.8s" }}>
+              <JoinAnother onClick={leave} />
+            </div>
           </Screen>
         );
       }
-      return (
-        <Screen tone="brand">
-          <p className="anim-rise text-phone-lg font-bold text-[#E4DDFB]">Game over · you finished</p>
-          <h1 className="anim-pop font-display text-phone-giant font-extrabold" style={{ animationDelay: "0.3s" }}>
-            {ordinal(me.rank)}
-          </h1>
-          <p className="anim-rise text-phone-lg font-bold" style={{ animationDelay: "0.6s" }}>
-            {formatNumber(me.score)} points · of {me.playerCount}
-          </p>
-          {/* The top 3 are only shown on the big screen. */}
-          <div className="anim-rise" style={{ animationDelay: "1.2s" }}>
-            <JoinAnother onClick={leave} />
-          </div>
-        </Screen>
-      );
   }
 }
 
