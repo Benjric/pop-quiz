@@ -55,13 +55,17 @@ export function HostScreen({ gameId }: { gameId: string }) {
         <Leaderboard key={`l${state.game.currentIndex}`} state={state} nextButton={nextButton} />
       )}
       {state.game.status === "ENDED" && <FinalResults state={state} />}
-      {error ? (
-        <p role="alert" className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-xl bg-danger px-4 py-2 font-bold text-white">
-          {error}
-        </p>
-      ) : null}
       {dialog}
-      <div className="absolute right-3 bottom-3 flex items-center gap-1">
+      {/* Teacher controls get their own strip below the content, so they
+          never cover a screen's buttons. */}
+      <div className="flex shrink-0 items-center gap-1 px-3 pb-2">
+        {error ? (
+          <p role="alert" className="mr-auto rounded-xl bg-danger px-4 py-2 font-bold text-white">
+            {error}
+          </p>
+        ) : (
+          <span className="mr-auto" />
+        )}
         {state.game.status !== "ENDED" && state.game.status !== "LOBBY" ? (
           <button
             type="button"
