@@ -1,26 +1,90 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
+/* Pop Quiz design tokens — from the "Class Quiz Game Design" canvas. */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-nunito), system-ui, sans-serif;
+  --font-display: var(--font-bricolage), var(--font-nunito), sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+@theme {
+  --color-ivory: #fbf7ef;
+  --color-ink: #1e1b3a;
+  --color-muted: #5b5775;
+  --color-line: #e9e2d3;
+  --color-field: #d8d1e6;
+  --color-brand: #4b2bb5;
+  --color-brand-dark: #351d87;
+  --color-brand-soft: #ede7fb;
+  --color-brand-line: #b9a6ee;
+  --color-danger: #b42318;
+  --color-danger-soft: #fdecea;
+  --color-warn: #8a5a00;
+  --color-warn-soft: #fdf3dc;
+  --color-success: #1d7a4c;
+  --color-success-soft: #e3f3ea;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-ivory);
+  color: var(--color-ink);
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+/* Phone screens: keep clear of notches and home bars, and scale type with
+   the smaller of width and height so a 320px phone and a landscape phone
+   both fit. */
+@utility safe-screen {
+  padding-top: max(1.25rem, env(safe-area-inset-top));
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
+}
+@utility text-phone-hero {
+  font-size: clamp(30px, min(11vw, 8dvh), 52px);
+  line-height: 1.1;
+}
+@utility text-phone-giant {
+  font-size: clamp(52px, min(22vw, 14dvh), 96px);
+  line-height: 1;
+}
+@utility text-phone-lg {
+  font-size: clamp(17px, min(5vw, 3.2dvh), 22px);
+}
+@utility text-phone-question {
+  font-size: clamp(18px, min(6vw, 4dvh), 30px);
+  line-height: 1.2;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl px-4 font-display text-[15px] font-extrabold whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply bg-brand text-white hover:bg-brand-dark;
+  }
+  .btn-dark {
+    @apply bg-ink text-white hover:bg-black;
+  }
+  .btn-outline {
+    @apply border-2 border-line bg-white text-ink hover:border-field hover:bg-ivory;
+  }
+  .btn-danger {
+    @apply border-2 border-danger/25 bg-white text-danger hover:bg-danger-soft;
+  }
+  .btn-sm {
+    @apply h-9 rounded-lg px-3 text-sm;
+  }
+  .field {
+    @apply h-11 w-full rounded-xl border-2 border-field bg-white px-3 text-[15px] outline-none focus:border-brand;
+  }
+  .card {
+    @apply rounded-3xl border-2 border-line bg-white;
+  }
+  .pill {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-bold;
+  }
 }

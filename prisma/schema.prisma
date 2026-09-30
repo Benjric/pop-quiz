@@ -1,0 +1,134 @@
+// Pop Quiz — Prisma schema
+// One teacher account (seeded), quizzes built from uploaded files, and games
+// that snapshot the questions they use so later edits never rewrite history.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Teacher {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  quizzes Quiz[]
+}
+
+model Quiz {
+  id             String   @id @default(cuid())
+  teacherId      String
+  title          String
+  sourceFileName String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  teacher   Teacher    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  questions Question[]
+  games     Game[]
+
+  @@index([teacherId])
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+}
+
+model Question {
+  id           String       @id @default(cuid())
+  quizId       String
+  order        Int
+  text         String
+  choices      String[]
+  // Null until the teacher picks one — files don't always mark the answer.
+  correctIndex Int?
+  type         QuestionType @default(MULTIPLE_CHOICE)
+
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@index([quizId, order])
+}
+
+enum GameStatus {
+  LOBBY
+  QUESTION
+  REVEAL
+  LEADERBOARD
+  ENDED
+}
+
+model Game {
+  id                String     @id @default(cuid())
+  quizId            String
+  pin               String
+  status            GameStatus @default(LOBBY)
+  // -1 while in the lobby; otherwise the `order` of the current GameQuestion.
+  currentIndex      Int        @default(-1)
+  questionStartedAt DateTime?
+  timeLimitSec      Int
+  shuffleChoices    Boolean    @default(false)
+  createdAt         DateTime   @default(now())
+  endedAt           DateTime?
+
+  quiz      Quiz           @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  questions GameQuestion[]
+  players   Player[]
+
+  @@index([pin, status])
+}
+
+// A frozen copy of a question as it was played, choices already in the
+// order shown on screen.
+model GameQuestion {
+  id           String   @id @default(cuid())
+  gameId       String
+  order        Int
+  text         String
+  choices      String[]
+  correctIndex Int
+
+  game    Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  answers Answer[]
+
+  @@unique([gameId, order])
+}
+
+model Player {
+  id        String    @id @default(cuid())
+  gameId    String
+  nickname  String
+  tokenHash String
+  score     Int       @default(0)
+  streak    Int       @default(0)
+  kickedAt  DateTime?
+  joinedAt  DateTime  @default(now())
+
+  game    Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  answers Answer[]
+
+  @@unique([gameId, nickname])
+}
+
+model Answer {
+  id             String   @id @default(cuid())
+  playerId       String
+  gameQuestionId String
+  choiceIndex    Int
+  correct        Boolean
+  points         Int
+  responseMs     Int
+  createdAt      DateTime @default(now())
+
+  player       Player       @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  gameQuestion GameQuestion @relation(fields: [gameQuestionId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, gameQuestionId])
+  @@index([gameQuestionId])
+}

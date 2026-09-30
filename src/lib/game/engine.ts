@@ -1,0 +1,404 @@
+import { Prisma } from "@/generated/prisma/client";
+import { prisma } from "@/lib/prisma";
+import { publishGame, publishHost } from "@/lib/realtime";
+import { pickQuestions, shuffleChoices, type PickMode } from "./pickQuestions";
+import { GRACE_MS, rankPlayers, scoreAnswer } from "./score";
+import type { GameStatus, HostState, PlayerState } from "./types";
+
+/**
+ * The game state machine. Every move is a conditional update on the state
+ * the caller saw ("move from REVEAL of question 3"), so two screens pressing
+ * Next at once — or a double click — can never skip a question.
+ *
+ *   LOBBY → QUESTION(0) → REVEAL(0) → LEADERBOARD(0) → QUESTION(1) → …
+ *         … → REVEAL(last) → ENDED (final podium)
+ */
+
+export class GameError extends Error {
+  constructor(
+    message: string,
+    public status = 400,
+  ) {
+    super(message);
+  }
+}
+
+/** Games are only joinable for a day; older unfinished games are ignored. */
+const GAME_LIFETIME_MS = 24 * 60 * 60 * 1000;
+
+// ── creating ────────────────────────────────────────────────────────────────
+
+export type GameSettings = {
+  count: number;
+  mode: PickMode;
+  excludedIds: string[];
+  timeLimitSec: number;
+  shuffleChoices: boolean;
+};
+
+export async function createGame(teacherId: string, quizId: string, settings: GameSettings) {
+  const quiz = await prisma.quiz.findFirst({
+    where: { id: quizId, teacherId },
+    include: { questions: true },
+  });
+  if (!quiz) throw new GameError("Quiz not found.", 404);
+
+  const picked = pickQuestions(quiz.questions, settings);
+  if (picked.length === 0) {
+    throw new GameError("Pick at least one question that has a correct answer.");
+  }
+
+  const pin = await freePin();
+  return prisma.game.create({
+    data: {
+      quizId,
+      pin,
+      timeLimitSec: settings.timeLimitSec,
+      shuffleChoices: settings.shuffleChoices,
+      questions: {
+        create: picked.map((q, order) => {
+          const base = { choices: q.choices, correctIndex: q.correctIndex! };
+          const final =
+            settings.shuffleChoices && q.type === "MULTIPLE_CHOICE"
+              ? shuffleChoices(base.choices, base.correctIndex)
+              : base;
+          return { order, text: q.text, ...final };
+        }),
+      },
+    },
+  });
+}
+
+async function freePin(): Promise<string> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const pin = String(Math.floor(100000 + Math.random() * 900000));
+    const clash = await prisma.game.findFirst({
+      where: { pin, status: { not: "ENDED" }, createdAt: { gt: new Date(Date.now() - GAME_LIFETIME_MS) } },
+      select: { id: true },
+    });
+    if (!clash) return pin;
+  }
+  throw new GameError("Couldn't find a free game PIN. Try again.", 503);
+}
+
+export async function findJoinableGame(pin: string) {
+  return prisma.game.findFirst({
+    where: {
+      pin,
+      status: { not: "ENDED" },
+      createdAt: { gt: new Date(Date.now() - GAME_LIFETIME_MS) },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function assertTeacherOwnsGame(gameId: string, teacherId: string) {
+  const game = await prisma.game.findFirst({
+    where: { id: gameId, quiz: { teacherId } },
+    select: { id: true },
+  });
+  if (!game) throw new GameError("Game not found.", 404);
+}
+
+// ── moving through the game ─────────────────────────────────────────────────
+
+export type Expected = { status: GameStatus; index: number };
+
+export async function advance(gameId: string, from: Expected) {
+  switch (from.status) {
+    case "LOBBY":
+      return start(gameId);
+    case "QUESTION":
+      return reveal(gameId, from.index); // "Skip": close the question now
+    case "REVEAL": {
+      const total = await prisma.gameQuestion.count({ where: { gameId } });
+      if (from.index >= total - 1) return endGame(gameId);
+      const moved = await prisma.game.updateMany({
+        where: { id: gameId, status: "REVEAL", currentIndex: from.index },
+        data: { status: "LEADERBOARD" },
+      });
+      if (moved.count) await publishGame(gameId);
+      return;
+    }
+    case "LEADERBOARD": {
+      const moved = await prisma.game.updateMany({
+        where: { id: gameId, status: "LEADERBOARD", currentIndex: from.index },
+        data: { status: "QUESTION", currentIndex: from.index + 1, questionStartedAt: new Date() },
+      });
+      if (moved.count) await publishGame(gameId);
+      return;
+    }
+    case "ENDED":
+      return;
+  }
+}
+
+async function start(gameId: string) {
+  const total = await prisma.gameQuestion.count({ where: { gameId } });
+  if (total === 0) throw new GameError("This game has no questions.");
+  const moved = await prisma.game.updateMany({
+    where: { id: gameId, status: "LOBBY" },
+    data: { status: "QUESTION", currentIndex: 0, questionStartedAt: new Date() },
+  });
+  if (moved.count) await publishGame(gameId);
+}
+
+export async function reveal(gameId: string, index: number) {
+  const moved = await prisma.game.updateMany({
+    where: { id: gameId, status: "QUESTION", currentIndex: index },
+    data: { status: "REVEAL" },
+  });
+  if (!moved.count) return;
+
+  // Players who didn't answer lose their streak.
+  const question = await prisma.gameQuestion.findUnique({
+    where: { gameId_order: { gameId, order: index } },
+    select: { id: true },
+  });
+  if (question) {
+    await prisma.player.updateMany({
+      where: { gameId, kickedAt: null, answers: { none: { gameQuestionId: question.id } } },
+      data: { streak: 0 },
+    });
+  }
+  await publishGame(gameId);
+}
+
+export async function endGame(gameId: string) {
+  const moved = await prisma.game.updateMany({
+    where: { id: gameId, status: { not: "ENDED" } },
+    data: { status: "ENDED", endedAt: new Date() },
+  });
+  if (moved.count) await publishGame(gameId);
+}
+
+export async function kickPlayer(gameId: string, playerId: string) {
+  await prisma.player.updateMany({
+    where: { id: playerId, gameId, kickedAt: null },
+    data: { kickedAt: new Date() },
+  });
+  await publishGame(gameId, "players");
+  await revealIfEveryoneAnswered(gameId);
+}
+
+/** Closes the question lazily once its time (plus grace) has run out. */
+async function closeIfExpired(game: {
+  id: string;
+  status: string;
+  currentIndex: number;
+  questionStartedAt: Date | null;
+  timeLimitSec: number;
+}): Promise<boolean> {
+  const deadline = deadlineOf(game);
+  if (game.status === "QUESTION" && deadline !== null && Date.now() > deadline + GRACE_MS) {
+    await reveal(game.id, game.currentIndex);
+    return true;
+  }
+  return false;
+}
+
+async function revealIfEveryoneAnswered(gameId: string) {
+  const game = await prisma.game.findUnique({ where: { id: gameId } });
+  if (!game || game.status !== "QUESTION") return;
+  const question = await prisma.gameQuestion.findUnique({
+    where: { gameId_order: { gameId, order: game.currentIndex } },
+    select: { id: true },
+  });
+  if (!question) return;
+  const [active, answered] = await Promise.all([
+    prisma.player.count({ where: { gameId, kickedAt: null } }),
+    prisma.answer.count({ where: { gameQuestionId: question.id, player: { kickedAt: null } } }),
+  ]);
+  if (active > 0 && answered >= active) await reveal(gameId, game.currentIndex);
+}
+
+function deadlineOf(game: { questionStartedAt: Date | null; timeLimitSec: number }): number | null {
+  return game.questionStartedAt ? game.questionStartedAt.getTime() + game.timeLimitSec * 1000 : null;
+}
+
+// ── answering ───────────────────────────────────────────────────────────────
+
+export async function submitAnswer(
+  player: { id: string; gameId: string; streak: number; kickedAt: Date | null },
+  index: number,
+  choiceIndex: number,
+) {
+  if (player.kickedAt) throw new GameError("You were removed from this game.", 403);
+
+  const game = await prisma.game.findUnique({ where: { id: player.gameId } });
+  if (!game || game.status !== "QUESTION" || game.currentIndex !== index || !game.questionStartedAt) {
+    throw new GameError("This question is closed.", 409);
+  }
+  const question = await prisma.gameQuestion.findUnique({
+    where: { gameId_order: { gameId: game.id, order: index } },
+  });
+  if (!question || choiceIndex < 0 || choiceIndex >= question.choices.length) {
+    throw new GameError("That isn't one of the choices.");
+  }
+
+  const correct = choiceIndex === question.correctIndex;
+  const result = scoreAnswer({
+    correct,
+    elapsedMs: Date.now() - game.questionStartedAt.getTime(),
+    limitMs: game.timeLimitSec * 1000,
+    previousStreak: player.streak,
+  });
+  if (!result.accepted) throw new GameError("Time's up!", 409);
+
+  try {
+    await prisma.$transaction([
+      prisma.answer.create({
+        data: {
+          playerId: player.id,
+          gameQuestionId: question.id,
+          choiceIndex,
+          correct,
+          points: result.points,
+          responseMs: result.responseMs,
+        },
+      }),
+      prisma.player.update({
+        where: { id: player.id },
+        data: { score: { increment: result.points }, streak: result.streak },
+      }),
+    ]);
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new GameError("You already answered this question.", 409);
+    }
+    throw error;
+  }
+
+  await publishHost(game.id, "answers");
+  await revealIfEveryoneAnswered(game.id);
+}
+
+// ── what each screen sees ───────────────────────────────────────────────────
+
+async function loadFullGame(gameId: string) {
+  return prisma.game.findUnique({
+    where: { id: gameId },
+    include: {
+      quiz: { select: { id: true, title: true } },
+      players: { orderBy: { joinedAt: "asc" } },
+      questions: {
+        orderBy: { order: "asc" },
+        include: { answers: { select: { playerId: true, choiceIndex: true, correct: true, points: true } } },
+      },
+    },
+  });
+}
+
+export async function getHostState(gameId: string): Promise<HostState | null> {
+  let game = await loadFullGame(gameId);
+  if (!game) return null;
+  if (await closeIfExpired(game)) game = (await loadFullGame(gameId))!;
+
+  const current = game.status === "LOBBY" ? null : (game.questions[game.currentIndex] ?? null);
+  const active = game.players.filter((p) => !p.kickedAt);
+  const activeIds = new Set(active.map((p) => p.id));
+  const ranked = rankPlayers(active);
+  const rankOf = new Map(ranked.map((p) => [p.id, p.rank]));
+
+  const players = game.players.map((p) => {
+    const mine = game.questions.flatMap((q) => q.answers.filter((a) => a.playerId === p.id));
+    const cur = current?.answers.find((a) => a.playerId === p.id) ?? null;
+    return {
+      id: p.id,
+      nickname: p.nickname,
+      score: p.score,
+      rank: rankOf.get(p.id) ?? 0,
+      streak: p.streak,
+      kicked: Boolean(p.kickedAt),
+      current: cur ? { choiceIndex: cur.choiceIndex, correct: cur.correct, points: cur.points } : null,
+      correctCount: mine.filter((a) => a.correct).length,
+      answeredCount: mine.length,
+    };
+  });
+
+  return {
+    game: {
+      id: game.id,
+      pin: game.pin,
+      status: game.status,
+      quizId: game.quiz.id,
+      quizTitle: game.quiz.title,
+      currentIndex: game.currentIndex,
+      totalQuestions: game.questions.length,
+      timeLimitSec: game.timeLimitSec,
+      deadline: game.status === "QUESTION" ? deadlineOf(game) : null,
+      serverNow: Date.now(),
+      createdAt: game.createdAt.toISOString(),
+    },
+    question: current
+      ? { index: current.order, text: current.text, choices: current.choices, correctIndex: current.correctIndex }
+      : null,
+    players,
+    activeCount: active.length,
+    answeredCount: current ? current.answers.filter((a) => activeIds.has(a.playerId)).length : 0,
+    distribution: current
+      ? current.choices.map(
+          (_, i) => current.answers.filter((a) => a.choiceIndex === i && activeIds.has(a.playerId)).length,
+        )
+      : [],
+    leaderboard: ranked.slice(0, 10).map((p) => ({ nickname: p.nickname, score: p.score, rank: p.rank })),
+    questions: game.questions.map((q) => {
+      const counted = q.answers.filter((a) => activeIds.has(a.playerId));
+      return {
+        index: q.order,
+        text: q.text,
+        answered: counted.length,
+        correct: counted.filter((a) => a.correct).length,
+      };
+    }),
+  };
+}
+
+export async function getPlayerState(playerId: string): Promise<PlayerState | null> {
+  const player = await prisma.player.findUnique({ where: { id: playerId } });
+  if (!player) return null;
+  let game = await loadFullGame(player.gameId);
+  if (!game) return null;
+  if (await closeIfExpired(game)) game = (await loadFullGame(player.gameId))!;
+
+  const me = game.players.find((p) => p.id === playerId)!;
+  const active = game.players.filter((p) => !p.kickedAt);
+  const ranked = rankPlayers(active);
+  const myRank = ranked.find((p) => p.id === playerId)?.rank ?? 0;
+
+  const status = game.status;
+  const revealed = status === "REVEAL" || status === "LEADERBOARD" || status === "ENDED";
+  const current = status === "LOBBY" ? null : (game.questions[game.currentIndex] ?? null);
+  const answer = current?.answers.find((a) => a.playerId === playerId) ?? null;
+  const showQuestion = status === "QUESTION" || status === "REVEAL";
+
+  return {
+    gameId: game.id,
+    status,
+    quizTitle: game.quiz.title,
+    index: game.currentIndex,
+    total: game.questions.length,
+    deadline: status === "QUESTION" ? deadlineOf(game) : null,
+    serverNow: Date.now(),
+    question: showQuestion && current ? { text: current.text, choices: current.choices } : null,
+    correctIndex: revealed && current ? current.correctIndex : null,
+    me: {
+      nickname: me.nickname,
+      score: me.score,
+      rank: myRank,
+      playerCount: active.length,
+      kicked: Boolean(me.kickedAt),
+    },
+    myAnswer: answer
+      ? {
+          choiceIndex: answer.choiceIndex,
+          correct: revealed ? answer.correct : null,
+          points: revealed ? answer.points : null,
+        }
+      : null,
+    podium:
+      status === "ENDED"
+        ? ranked.slice(0, 3).map((p) => ({ nickname: p.nickname, score: p.score, rank: p.rank }))
+        : [],
+  };
+}

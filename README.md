@@ -1,36 +1,46 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pop Quiz
 
-## Getting Started
+A live, Kahoot-style class quiz. The teacher uploads a test or worksheet, the questions are pulled out automatically, and students join from their phones with a 6-digit PIN or by scanning a QR code. No student accounts, no app.
 
-First, run the development server:
+- **Teacher:** sign in → upload a file (PDF, Word, Excel, CSV, text) → review the questions → choose how many to play → put the lobby on the projector.
+- **Students:** open the site, enter the PIN and a name, answer on the phone.
+- **After the game:** per-student and per-question results, most-missed questions, CSV export.
+
+Everything runs on free tiers: Vercel Hobby, Neon Postgres and Ably.
+
+## Stack
+
+Next.js 16 (App Router), React 19, Tailwind 4, NextAuth v5 (credentials), Prisma 7 + PostgreSQL, Ably for live updates (optional; screens fall back to polling without it).
+
+## Run locally
 
 ```bash
+npm install
+cp .env.example .env          # then fill it in
+npx prisma migrate deploy     # create the tables
+npm run seed                  # create your teacher login from ADMIN_*
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000. To try it as a student from a phone on the same Wi-Fi, open `http://<your-computer's-IP>:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`npm test` runs the unit tests (question parsing, question picking, scoring).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Deploy to Vercel
 
-## Learn More
+1. Import this GitHub repo in Vercel (or run `vercel` in this folder).
+2. **Database:** in the Vercel project, go to Storage → Create Database → Neon (free). It sets `DATABASE_URL` and `DATABASE_URL_UNPOOLED` for you.
+3. **Environment variables** (Settings → Environment Variables):
+   - `AUTH_SECRET`: any long random string (`npx auth secret` prints one)
+   - `ABLY_API_KEY`: optional; the root key of a free Ably app, for instant updates
+4. Deploy. The build runs `prisma migrate deploy`, so the tables are created automatically.
+5. Create your teacher login once, against the production database:
+   ```bash
+   vercel env pull .env.production.local
+   npx dotenv-cli -e .env.production.local -- npm run seed   # with ADMIN_EMAIL / ADMIN_PASSWORD / ADMIN_NAME set
+   ```
+   Running the seed again later resets that account's password.
 
-To learn more about Next.js, take a look at the following resources:
+## How live games work
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The server is the only source of truth. Every move (start, next, answer, kick) goes through an API route that updates the database with a conditional write, so double clicks or two screens pressing Next can't skip a question. Ably messages only say "something changed"; each screen then re-reads its own view, so a phone never receives the correct answer early. Answers are timed on the server, with one second of grace for network lag.

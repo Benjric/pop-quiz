@@ -1,0 +1,240 @@
+"use client";
+
+import Link from "next/link";
+import { useState, useTransition } from "react";
+import { Minus, Plus } from "lucide-react";
+import { startGame } from "../../actions";
+
+type Q = { id: string; text: string; hasAnswer: boolean };
+
+const PRESETS = [5, 10, 15] as const;
+const TIMES = [10, 20, 30, 60] as const;
+/** Rough time per question spent on the answer, leaderboard and chatter. */
+const OVERHEAD_SEC = 15;
+
+export function HostSetup({ quizId, questions }: { quizId: string; questions: Q[] }) {
+  const [included, setIncluded] = useState(() => new Set(questions.filter((q) => q.hasAnswer).map((q) => q.id)));
+  const available = included.size;
+  const [wanted, setWanted] = useState(() => Math.min(10, available) || 1);
+  const [mode, setMode] = useState<"random" | "ordered">("random");
+  const [timeLimitSec, setTimeLimitSec] = useState<number>(20);
+  const [shuffleChoices, setShuffleChoices] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const count = Math.max(0, Math.min(wanted, available));
+  const minutes = Math.max(1, Math.round((count * (timeLimitSec + OVERHEAD_SEC)) / 60));
+  const missing = questions.filter((q) => !q.hasAnswer).length;
+
+  const toggle = (id: string) =>
+    setIncluded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const create = () => {
+    setError(null);
+    startTransition(async () => {
+      const result = await startGame({
+        quizId,
+        count,
+        mode,
+        excludedIds: questions.filter((q) => !included.has(q.id)).map((q) => q.id),
+        timeLimitSec,
+        shuffleChoices,
+      });
+      if (result?.error) setError(result.error);
+    });
+  };
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+      <section className="card flex flex-col p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-display text-lg font-extrabold">
+            Questions to draw from <span className="text-muted">({available} of {questions.length})</span>
+          </h2>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={() => setIncluded(new Set(questions.filter((q) => q.hasAnswer).map((q) => q.id)))}
+            >
+              All
+            </button>
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => setIncluded(new Set())}>
+              None
+            </button>
+          </div>
+        </div>
+        {missing ? (
+          <p className="mt-3 rounded-xl bg-warn-soft px-3 py-2 text-sm font-semibold text-warn">
+            {missing} {missing === 1 ? "question has" : "questions have"} no correct answer and can&apos;t be used.{" "}
+            <Link href={`/dashboard/quizzes/${quizId}`} className="underline">
+              Edit the quiz
+            </Link>{" "}
+            to pick one.
+          </p>
+        ) : null}
+        <ul className="mt-3 flex flex-col divide-y divide-line">
+          {questions.map((q, i) => (
+            <li key={q.id}>
+              <label className={`flex items-start gap-3 py-2.5 ${q.hasAnswer ? "cursor-pointer" : "opacity-50"}`}>
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-5 w-5 shrink-0 accent-[#4B2BB5]"
+                  checked={included.has(q.id)}
+                  disabled={!q.hasAnswer}
+                  onChange={() => toggle(q.id)}
+                />
+                <span className="w-7 shrink-0 font-bold text-muted">{i + 1}</span>
+                <span className="flex-1">
+                  {q.text}
+                  {!q.hasAnswer ? <span className="ml-2 text-sm font-bold text-warn">needs an answer</span> : null}
+                </span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <aside className="flex flex-col gap-5 self-start lg:sticky lg:top-6">
+        <div className="card flex flex-col gap-5 p-5">
+          <fieldset className="flex flex-col gap-3">
+            <legend className="mb-2 font-display text-lg font-extrabold">How many questions?</legend>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                aria-label="One fewer"
+                className="btn btn-outline h-12 w-12 p-0"
+                disabled={count <= 1}
+                onClick={() => setWanted(Math.max(1, count - 1))}
+              >
+                <Minus size={20} />
+              </button>
+              <input
+                aria-label="Number of questions"
+                inputMode="numeric"
+                value={count}
+                onChange={(e) => setWanted(Number(e.target.value.replace(/\D/g, "")) || 1)}
+                className="field h-12 w-20 text-center font-display text-2xl font-extrabold"
+              />
+              <button
+                type="button"
+                aria-label="One more"
+                className="btn btn-outline h-12 w-12 p-0"
+                disabled={count >= available}
+                onClick={() => setWanted(count + 1)}
+              >
+                <Plus size={20} />
+              </button>
+              <span className="text-sm text-muted">of {available}</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {PRESETS.map((n) => (
+                <Choice key={n} active={count === n} disabled={n > available} onClick={() => setWanted(n)}>
+                  {n}
+                </Choice>
+              ))}
+              <Choice active={count === available && available > 0} disabled={available === 0} onClick={() => setWanted(available)}>
+                All
+              </Choice>
+            </div>
+          </fieldset>
+
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-2 font-display text-lg font-extrabold">Which ones?</legend>
+            <Radio name="mode" checked={mode === "random"} onChange={() => setMode("random")}>
+              A random mix <span className="text-muted">— different every game</span>
+            </Radio>
+            <Radio name="mode" checked={mode === "ordered"} onChange={() => setMode("ordered")}>
+              The first {count} in order
+            </Radio>
+          </fieldset>
+
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-2 font-display text-lg font-extrabold">Time per question</legend>
+            <div className="flex flex-wrap gap-2">
+              {TIMES.map((t) => (
+                <Choice key={t} active={timeLimitSec === t} onClick={() => setTimeLimitSec(t)}>
+                  {t} s
+                </Choice>
+              ))}
+            </div>
+          </fieldset>
+
+          <label className="flex cursor-pointer items-center gap-3 font-semibold">
+            <input
+              type="checkbox"
+              className="h-5 w-5 accent-[#4B2BB5]"
+              checked={shuffleChoices}
+              onChange={(e) => setShuffleChoices(e.target.checked)}
+            />
+            Shuffle the answer order
+          </label>
+        </div>
+
+        <div className="card flex flex-col gap-3 p-5">
+          <p className="text-muted">
+            <span className="font-display text-2xl font-extrabold text-ink">{count}</span> questions · about{" "}
+            <span className="font-bold text-ink">{minutes} min</span>
+          </p>
+          {error ? (
+            <p role="alert" className="rounded-xl bg-danger-soft px-3 py-2 text-sm font-semibold text-danger">
+              {error}
+            </p>
+          ) : null}
+          <button type="button" className="btn btn-primary h-14 text-lg" disabled={pending || count === 0} onClick={create}>
+            {pending ? "Creating…" : "Create game"}
+          </button>
+          <p className="text-sm text-muted">Opens the lobby with the PIN and QR code. Put it on the projector.</p>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function Choice({
+  active,
+  disabled,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      disabled={disabled}
+      onClick={onClick}
+      className={`btn btn-sm min-w-14 ${active ? "bg-brand text-white" : "btn-outline"}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Radio({
+  name,
+  checked,
+  onChange,
+  children,
+}: {
+  name: string;
+  checked: boolean;
+  onChange: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="flex cursor-pointer items-center gap-3">
+      <input type="radio" name={name} checked={checked} onChange={onChange} className="h-5 w-5 accent-[#4B2BB5]" />
+      <span className="font-semibold">{children}</span>
+    </label>
+  );
+}
