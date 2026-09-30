@@ -8,7 +8,7 @@ import { ChoiceShape, choiceStyle } from "@/components/choices";
 import { LogoMark } from "@/components/Logo";
 import { Credit } from "@/components/Credit";
 import { formatNumber, formatPin, ordinal } from "@/lib/format";
-import { finaleSeconds, LIST_TO, listSeconds, ROW_STEP_S } from "@/lib/game/finale";
+import { finaleSeconds, LIST_TO, listSeconds, ROW_STEP_S, top3TextAt } from "@/lib/game/finale";
 
 /**
  * The student's phone. Every screen fills the viewport (dvh, so mobile
@@ -484,7 +484,7 @@ function PlacesCountdown({
       </ol>
       <p
         className="anim-pop font-display text-[clamp(20px,6vw,26px)] font-extrabold"
-        style={{ animationDelay: `${places.length * ROW_STEP_S + 0.3 - offset}s` }}
+        style={{ animationDelay: `${top3TextAt(places.length) - offset}s` }}
       >
         …and now, the top 3!
       </p>

@@ -13,6 +13,7 @@ import {
   LIST_TO,
   listSeconds,
   ROW_STEP_S,
+  top3TextAt,
   WINNER_AT_S as CONFETTI_AT_S,
 } from "@/lib/game/finale";
 
@@ -87,7 +88,7 @@ function PlacesList({ list, total }: { list: PodiumEntry[]; total: number }) {
       </ol>
       <p
         className="anim-pop font-display text-[clamp(26px,2.8vw,44px)] font-extrabold text-brand"
-        style={{ animationDelay: `${list.length * ROW_STEP_S + 0.3}s` }}
+        style={{ animationDelay: `${top3TextAt(list.length)}s` }}
       >
         …and now, the top 3!
       </p>

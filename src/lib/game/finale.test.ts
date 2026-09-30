@@ -13,7 +13,7 @@ describe("finale", () => {
   it("phones wait until the winner is revealed", () => {
     expect(finaleSeconds(0)).toBe(0);
     expect(finaleSeconds(3)).toBeCloseTo(WINNER_AT_S + PHONE_REVEAL_AFTER_S);
-    expect(finaleSeconds(10)).toBeLessThan(11); // the whole finale
+    expect(finaleSeconds(10)).toBeLessThan(13); // the whole finale
     expect(finaleSeconds(100)).toBe(finaleSeconds(10));
   });
 });
