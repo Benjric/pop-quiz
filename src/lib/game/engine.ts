@@ -472,7 +472,7 @@ export async function getPlayerState(me: Player): Promise<PlayerState | null> {
       ? prisma.player.findMany({
           where: active,
           orderBy: [{ score: "desc" }, { nickname: "asc" }],
-          take: 5,
+          take: 7,
           select: { nickname: true, score: true },
         })
       : [],

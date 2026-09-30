@@ -399,7 +399,7 @@ function InGame({ state, refresh, leave }: { state: PlayerState; refresh: () => 
                   className={`anim-rise flex items-center gap-3 rounded-2xl px-4 py-2.5 ${
                     p.nickname === me.nickname ? "bg-[#E8A317] text-ink" : "bg-white text-ink"
                   }`}
-                  // 5th first, the winner last, as on the big screen.
+                  // 7th first, the winner last, as on the big screen.
                   style={{ animationDelay: `${1 + (state.podium.length - 1 - i) * 0.5}s` }}
                 >
                   <span className="w-6 shrink-0 font-display text-xl font-extrabold text-brand">{p.rank}</span>

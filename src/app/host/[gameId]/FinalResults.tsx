@@ -9,14 +9,15 @@ import { playDrumRoll } from "@/lib/sounds";
 
 /**
  * The end of the game on the projector, in two acts:
- *   1. Top 5: rows rise in from 5th up to 1st.
+ *   1. Top 7: rows rise in from 7th up to 1st.
  *   2. Podium: 3rd, 2nd, then 1st rise up to a drum roll, and confetti falls
  *      with a crash and fanfare for the winner.
  * "Replay" runs it again. With reduced motion everything simply appears.
  */
 
-const ROW_STEP_S = 0.8; // between top-5 rows
-const TOP5_HOLD_S = 3; // how long the full top 5 stays up
+const TOP_LIST = 7; // how many the first act counts down
+const ROW_STEP_S = 0.7; // between its rows
+const LIST_HOLD_S = 3; // how long the full list stays up
 const BAR_DELAY_S = { 3: 0.3, 2: 1.4, 1: 2.6 } as const; // podium, by place
 const BAR_S = 0.9;
 const CONFETTI_AT_S = BAR_DELAY_S[1] + BAR_S;
@@ -27,20 +28,20 @@ export function FinalResults({ state }: { state: HostState }) {
 }
 
 function Sequence({ state, onReplay }: { state: HostState; onReplay: () => void }) {
-  const top = state.leaderboard.slice(0, 5);
-  const withTop5 = top.length > 3;
-  const [act, setAct] = useState<"top5" | "podium">(withTop5 ? "top5" : "podium");
+  const top = state.leaderboard.slice(0, TOP_LIST);
+  const withList = top.length > 3;
+  const [act, setAct] = useState<"list" | "podium">(withList ? "list" : "podium");
 
   useEffect(() => {
-    if (!withTop5) return;
-    const ms = ((top.length - 1) * ROW_STEP_S + 0.6 + TOP5_HOLD_S) * 1000;
+    if (!withList) return;
+    const ms = ((top.length - 1) * ROW_STEP_S + 0.6 + LIST_HOLD_S) * 1000;
     const t = setTimeout(() => setAct("podium"), ms);
     return () => clearTimeout(t);
-  }, [withTop5, top.length]);
+  }, [withList, top.length]);
 
   return (
     <div className="relative flex flex-1 flex-col items-center gap-[3vh] overflow-hidden px-[4vw] py-[5vh]">
-      {act === "top5" ? <TopFive top={top} /> : <Podium top={top.slice(0, 3)} quizTitle={state.game.quizTitle} />}
+      {act === "list" ? <TopList top={top} /> : <Podium top={top.slice(0, 3)} quizTitle={state.game.quizTitle} />}
       {top.length === 0 ? <p className="text-xl font-bold text-muted">Nobody played this game.</p> : null}
       {act === "podium" ? (
         <div className="anim-rise flex flex-wrap justify-center gap-3" style={{ animationDelay: `${top.length ? CONFETTI_AT_S + 0.8 : 0}s` }}>
@@ -59,11 +60,11 @@ function Sequence({ state, onReplay }: { state: HostState; onReplay: () => void 
   );
 }
 
-function TopFive({ top }: { top: PodiumEntry[] }) {
+function TopList({ top }: { top: PodiumEntry[] }) {
   return (
     <>
       <h1 className="anim-rise font-display text-[clamp(40px,4.4vw,64px)] font-extrabold">Top {top.length}</h1>
-      <ol className="flex w-full max-w-250 flex-1 flex-col justify-center gap-[1.8vh]">
+      <ol className="flex w-full max-w-250 flex-1 flex-col justify-center gap-[1.2vh]">
         {top.map((p, i) => {
           const first = i === 0;
           return (
@@ -71,8 +72,8 @@ function TopFive({ top }: { top: PodiumEntry[] }) {
               key={p.nickname}
               className={`anim-rise flex items-center gap-6 rounded-3xl px-8 ${
                 first
-                  ? "h-[clamp(72px,12vh,112px)] bg-brand text-white shadow-[0_12px_32px_-12px_rgba(75,43,181,0.7)]"
-                  : "h-[clamp(60px,10vh,92px)] border-2 border-line bg-white"
+                  ? "h-[clamp(60px,9.5vh,100px)] bg-brand text-white shadow-[0_12px_32px_-12px_rgba(75,43,181,0.7)]"
+                  : "h-[clamp(48px,7.5vh,80px)] border-2 border-line bg-white"
               }`}
               // Last place first, the winner last.
               style={{ animationDelay: `${(top.length - 1 - i) * ROW_STEP_S}s` }}
@@ -84,7 +85,7 @@ function TopFive({ top }: { top: PodiumEntry[] }) {
               >
                 {p.rank}
               </span>
-              <span className="min-w-0 flex-1 truncate text-[clamp(22px,2.3vw,36px)] font-bold">{p.nickname}</span>
+              <span className="min-w-0 flex-1 truncate text-[clamp(20px,2.1vw,34px)] font-bold">{p.nickname}</span>
               <span className="font-display text-[clamp(24px,2.5vw,40px)] font-extrabold">{formatNumber(p.score)}</span>
             </li>
           );
