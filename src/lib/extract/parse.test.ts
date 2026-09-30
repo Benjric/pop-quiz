@@ -127,6 +127,40 @@ describe("parseQuestionsFromText", () => {
     expect(result.questions[3].choices).toEqual(["feedback-loop", "Solution"]);
   });
 
+  it("keeps a long choice that wraps, and still reads a wrapped Answer line after it", () => {
+    const lines = [
+      "28. Marietta Tumaneng served six years as OIC-SDS, while Antonio Nang served only about eight months before retiring.",
+      "What does this contrast suggest about leadership continuity in the Division's early years?",
+      "A. That Nang's short tenure reflected poor performance that led to his removal.",
+      "B. That the Division intentionally rotated superintendents every eight months in its early years.",
+      "C. That Tumaneng's tenure was extended because Nang refused the OIC-SDS position outright.",
+      "D. That continuity was shaped by external circumstances, such as promotions, transfers, and retirement, rather",
+      "than institutional instability, with Tumaneng's longer tenure allowing her to embed lasting reforms.",
+      "Answer: D. That continuity was shaped by external circumstances, such as promotions, transfers, and retirement,",
+      "rather than institutional instability, with Tumaneng's longer tenure allowing her to embed lasting reforms.",
+      "Explanation: Drawing this contrast requires weighing tenure length against what each leader was able to accomplish",
+      "rather than treating both merely as names in a list of superintendents.",
+      "Source: SDO Tuguegarao City, Official Division History (depedtuguegarao.net/about/history-of-sdo-tuguegarao-city)",
+      "29. Next question? A. yes B. no",
+    ];
+    const fullD =
+      "That continuity was shaped by external circumstances, such as promotions, transfers, and retirement, rather than institutional instability, with Tumaneng's longer tenure allowing her to embed lasting reforms.";
+
+    // As text (a PDF, or Word without formatting).
+    const plain = parseQuestionsFromText(lines.join("\n"));
+    expect(plain.questions).toHaveLength(2);
+    expect(plain.questions[0].text).toMatch(/^Marietta Tumaneng .* early years\?$/);
+    expect(plain.questions[0].choices[3]).toBe(fullD);
+    expect(plain.questions[0].correctIndex).toBe(3);
+    expect(plain.questions[1].choices).toEqual(["yes", "no"]);
+
+    // From Word, where the right choice and the answer lines are bold.
+    const bold = lines.map((l, i) => (i >= 5 && i <= 8 ? `**${l}**` : l));
+    const word = parseQuestionsFromText(bold.join("\n"));
+    expect(word.questions[0].choices[3]).toBe(fullD);
+    expect(word.questions[0].correctIndex).toBe(3);
+  });
+
   it("does not glue headings, footers or passages onto the last choice", () => {
     const passage =
       "Read the passage below. The water cycle describes how water evaporates from the surface of the earth, rises into the atmosphere, cools and condenses into clouds, and falls again as precipitation.";

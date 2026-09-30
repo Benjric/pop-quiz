@@ -1,4 +1,5 @@
 import type { ExtractedQuestion, ExtractionResult, SheetRows, SkippedItem } from "./types";
+import { LIMITS } from "../quizLimits";
 
 /**
  * Rule-based question extractor. Runs entirely inside the app (no AI, no
@@ -38,7 +39,8 @@ const INLINE_CHOICE_SPLIT_RE = /(?:^|\s+)\(?([a-f])\s*[.)]\s+/gi;
 // Explanations of the answer are for the teacher, not part of the question.
 const EXPLANATION_WORDS = "explanations?|rationale|reason(?:ing)?|solution|justification|feedback|paliwanag";
 // A label, then ":" or a spaced dash: "Explanation: …", "Rationale – …".
-const EXPLANATION_RE = new RegExp(`^(?:${EXPLANATION_WORDS}|note|why)(?:\\s*:|\\s+[–—-]\\s)`, "i");
+// Line-start only: "Source:" / "Reference:" lines cite where a question came from.
+const EXPLANATION_RE = new RegExp(`^(?:${EXPLANATION_WORDS}|note|why|sources?|references?)(?:\\s*:|\\s+[–—-]\\s)`, "i");
 const INLINE_EXPLANATION_RE = new RegExp(`\\s*[(\\[]?\\b(?:${EXPLANATION_WORDS})(?:\\s*:|\\s+[–—-]\\s).*$`, "i");
 
 const TRUE_WORDS = new Set(["true", "t", "tama", "yes"]);
@@ -64,14 +66,17 @@ export function parseQuestionsFromText(input: string): ExtractionResult {
   let current: Block | null = null;
   let trueFalseSection = false;
   let lastWasChoice = false;
-  // Inside an "Explanation: …" paragraph, which may wrap over several lines.
-  let inExplanation = false;
+  // Skipping lines that aren't part of the question: an "Explanation: …" or
+  // "Answer: …" that wraps onto more lines, or a heading/footer between
+  // choices. The question stays open, so a later "Answer:" line or choice
+  // still belongs to it; the next choice or question ends the skipping.
+  let skipping = false;
 
   const flush = () => {
     if (current) blocks.push(current);
     current = null;
     lastWasChoice = false;
-    inExplanation = false;
+    skipping = false;
   };
 
   for (const rawLine of body) {
@@ -96,23 +101,25 @@ export function parseQuestionsFromText(input: string): ExtractionResult {
     }
 
     if (EXPLANATION_RE.test(line)) {
-      inExplanation = true;
+      skipping = true;
       lastWasChoice = false;
       continue;
     }
 
     const answer = line.match(ANSWER_LINE_RE);
     if (answer && current) {
-      // "Answer: D. Explanation: …" keeps only the answer.
+      // "Answer: D. Explanation: …" keeps only the answer. The answer's text
+      // may wrap onto the next lines; those must not join the last choice.
       current.answerHint = stripExplanation(answer[1]) || null;
       current.raw.push(line);
-      inExplanation = false;
+      skipping = true;
+      lastWasChoice = false;
       continue;
     }
 
     const choice = current ? line.match(CHOICE_RE) : null;
     if (current && choice && choice[2].trim()) {
-      inExplanation = false;
+      skipping = false;
       const split = splitInlineChoices(line);
       for (const c of split) {
         const parsed = markChoice(c);
@@ -137,7 +144,7 @@ export function parseQuestionsFromText(input: string): ExtractionResult {
       continue;
     }
 
-    if (inExplanation) continue; // the explanation wrapping onto more lines
+    if (skipping) continue;
 
     if (current) {
       // A wrapped line: belongs to the last choice if we're in the choices,
@@ -145,9 +152,11 @@ export function parseQuestionsFromText(input: string): ExtractionResult {
       if (lastWasChoice && current.choices.length > 0) {
         const last = current.choices[current.choices.length - 1];
         if (!continuesChoice(last.text, line)) {
-          // A heading, footer or new paragraph after the choices: the
-          // question is over, and this line isn't part of any question.
-          flush();
+          // A heading, footer or passage after a choice: not part of the
+          // question. Skip it (and what follows) until the next choice,
+          // answer line or question.
+          skipping = true;
+          lastWasChoice = false;
           continue;
         }
         last.text = `${last.text} ${line}`.trim();
@@ -224,7 +233,7 @@ function stripMarkers(s: string): string {
 }
 
 /** Longest a choice may grow by picking up wrapped lines. */
-const MAX_WRAPPED_CHOICE = 160;
+const MAX_WRAPPED_CHOICE = LIMITS.choice;
 
 /**
  * Whether a line after a choice is that choice wrapping onto the next line,
