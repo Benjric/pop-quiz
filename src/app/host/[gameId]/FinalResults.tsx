@@ -5,11 +5,13 @@ import { useEffect, useState } from "react";
 import { RotateCcw } from "lucide-react";
 import type { HostState, PodiumEntry } from "@/lib/game/types";
 import { formatNumber } from "@/lib/format";
+import { playDrumRoll } from "@/lib/sounds";
 
 /**
  * The end of the game on the projector, in two acts:
  *   1. Top 5: rows rise in from 5th up to 1st.
- *   2. Podium: 3rd, 2nd, then 1st rise up, and confetti falls for the winner.
+ *   2. Podium: 3rd, 2nd, then 1st rise up to a drum roll, and confetti falls
+ *      with a crash and fanfare for the winner.
  * "Replay" runs it again. With reduced motion everything simply appears.
  */
 
@@ -94,6 +96,15 @@ function TopFive({ top }: { top: PodiumEntry[] }) {
 
 function Podium({ top, quizTitle }: { top: PodiumEntry[]; quizTitle: string }) {
   const [first, second, third] = top;
+
+  // Drum roll while 3rd, 2nd and 1st rise; a hit as each lands, and a crash
+  // with a fanfare the moment the winner appears. Replay plays it again.
+  const places = top.length;
+  useEffect(() => {
+    if (places === 0) return;
+    const landings = [3, 2].filter((p) => p <= places).map((p) => BAR_DELAY_S[p as 3 | 2] + BAR_S);
+    return playDrumRoll(CONFETTI_AT_S, landings);
+  }, [places]);
   const columns = [
     { p: second, place: 2 as const, height: "h-[24vh]", bar: "bg-ink" },
     { p: first, place: 1 as const, height: "h-[34vh]", bar: "bg-brand" },
