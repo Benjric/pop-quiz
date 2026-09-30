@@ -9,8 +9,8 @@ type Q = { id: string; text: string; hasAnswer: boolean };
 
 const PRESETS = [5, 10, 15] as const;
 const TIMES = [10, 20, 30, 60] as const;
-/** Rough time per question spent on the answer, leaderboard and chatter. */
-const OVERHEAD_SEC = 15;
+/** Rough time per question spent on the answer (and leaderboard) screens. */
+const OVERHEAD_SEC = { auto: 7, manual: 15 };
 
 export function HostSetup({ quizId, questions }: { quizId: string; questions: Q[] }) {
   const [included, setIncluded] = useState(() => new Set(questions.filter((q) => q.hasAnswer).map((q) => q.id)));
@@ -19,11 +19,13 @@ export function HostSetup({ quizId, questions }: { quizId: string; questions: Q[
   const [mode, setMode] = useState<"random" | "ordered">("random");
   const [timeLimitSec, setTimeLimitSec] = useState<number>(20);
   const [shuffleChoices, setShuffleChoices] = useState(true);
+  const [autoAdvance, setAutoAdvance] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const count = Math.max(0, Math.min(wanted, available));
-  const minutes = Math.max(1, Math.round((count * (timeLimitSec + OVERHEAD_SEC)) / 60));
+  const overhead = autoAdvance ? OVERHEAD_SEC.auto : OVERHEAD_SEC.manual;
+  const minutes = Math.max(1, Math.round((count * (timeLimitSec + overhead)) / 60));
   const missing = questions.filter((q) => !q.hasAnswer).length;
 
   const toggle = (id: string) =>
@@ -44,6 +46,7 @@ export function HostSetup({ quizId, questions }: { quizId: string; questions: Q[
         excludedIds: questions.filter((q) => !included.has(q.id)).map((q) => q.id),
         timeLimitSec,
         shuffleChoices,
+        autoAdvance,
       });
       if (result?.error) setError(result.error);
     });
@@ -84,7 +87,7 @@ export function HostSetup({ quizId, questions }: { quizId: string; questions: Q[
               <label className={`flex items-start gap-3 py-2.5 ${q.hasAnswer ? "cursor-pointer" : "opacity-50"}`}>
                 <input
                   type="checkbox"
-                  className="mt-0.5 h-5 w-5 shrink-0 accent-[#4B2BB5]"
+                  className="mt-0.5 h-5 w-5 shrink-0 accent-brand"
                   checked={included.has(q.id)}
                   disabled={!q.hasAnswer}
                   onChange={() => toggle(q.id)}
@@ -168,11 +171,27 @@ export function HostSetup({ quizId, questions }: { quizId: string; questions: Q[
           <label className="flex cursor-pointer items-center gap-3 font-semibold">
             <input
               type="checkbox"
-              className="h-5 w-5 accent-[#4B2BB5]"
+              className="h-5 w-5 accent-brand"
               checked={shuffleChoices}
               onChange={(e) => setShuffleChoices(e.target.checked)}
             />
             Shuffle the answer order
+          </label>
+
+          <label className="flex cursor-pointer items-start gap-3 font-semibold">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-5 w-5 shrink-0 accent-brand"
+              checked={autoAdvance}
+              onChange={(e) => setAutoAdvance(e.target.checked)}
+            />
+            <span>
+              Go to the next question automatically
+              <span className="block text-sm font-normal text-muted">
+                5 seconds after the answer shows. You can pause it any time. Off: you press Next and a leaderboard
+                shows between questions.
+              </span>
+            </span>
           </label>
         </div>
 
@@ -233,7 +252,7 @@ function Radio({
 }) {
   return (
     <label className="flex cursor-pointer items-center gap-3">
-      <input type="radio" name={name} checked={checked} onChange={onChange} className="h-5 w-5 accent-[#4B2BB5]" />
+      <input type="radio" name={name} checked={checked} onChange={onChange} className="h-5 w-5 accent-brand" />
       <span className="font-semibold">{children}</span>
     </label>
   );

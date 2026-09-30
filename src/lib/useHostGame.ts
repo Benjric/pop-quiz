@@ -7,15 +7,16 @@ import type { GameStatus, HostState } from "@/lib/game/types";
 type Control =
   | { action: "next"; status: GameStatus; index: number }
   | { action: "reveal"; index: number }
+  | { action: "hold"; index: number }
   | { action: "end" }
   | { action: "kick"; playerId: string };
 
 /**
  * The teacher's view of a game, shared by the projector screen and the
  * monitor. Either screen may drive the game; the server's conditional moves
- * make sure two clicks on "Next" only move it once.
+ * make sure two clicks on "Next" (or two screens' timers) only move it once.
  */
-export function useHostGame(gameId: string, { autoReveal }: { autoReveal: boolean }) {
+export function useHostGame(gameId: string) {
   const load = useCallback(async (): Promise<HostState | null> => {
     const res = await fetch(`/api/games/${gameId}/state`, { cache: "no-store" });
     if (!res.ok) throw new Error(`state ${res.status}`);
@@ -25,7 +26,9 @@ export function useHostGame(gameId: string, { autoReveal }: { autoReveal: boolea
   const { state, setState, live } = useLiveGame<HostState>({ gameId, role: "host", load });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const secondsLeft = useCountdown(state?.game.deadline ?? null, state?.game.serverNow ?? null);
+  const serverNow = state?.game.serverNow ?? null;
+  const secondsLeft = useCountdown(state?.game.deadline ?? null, serverNow);
+  const nextIn = useCountdown(state?.game.nextAt ?? null, serverNow);
 
   const control = useCallback(
     async (body: Control) => {
@@ -54,30 +57,42 @@ export function useHostGame(gameId: string, { autoReveal }: { autoReveal: boolea
     void control({ action: "next", status: state.game.status, index: state.game.currentIndex });
   }, [state, control]);
 
-  // When the clock runs out, close the question (the server ignores repeats).
-  const revealedFor = useRef<number | null>(null);
+  const hold = useCallback(() => {
+    if (!state) return;
+    void control({ action: "hold", index: state.game.currentIndex });
+  }, [state, control]);
+
+  // Clocks: close the question when time is up, and move on when the answer
+  // screen's countdown ends. The server ignores repeats and stale moves.
+  const firedFor = useRef<string | null>(null);
   const status = state?.game.status;
   const index = state?.game.currentIndex;
   useEffect(() => {
-    if (!autoReveal || status !== "QUESTION" || secondsLeft !== 0 || index === undefined) return;
-    if (revealedFor.current === index) return;
-    revealedFor.current = index;
-    void control({ action: "reveal", index });
-  }, [autoReveal, status, secondsLeft, index, control]);
+    if (index === undefined) return;
+    let move: Control | null = null;
+    if (status === "QUESTION" && secondsLeft === 0) move = { action: "reveal", index };
+    else if (status === "REVEAL" && nextIn === 0) move = { action: "next", status: "REVEAL", index };
+    if (!move) return;
+    const key = `${move.action}:${index}`;
+    if (firedFor.current === key) return;
+    firedFor.current = key;
+    void control(move);
+  }, [status, index, secondsLeft, nextIn, control]);
 
-  return { state, live, busy, error, secondsLeft, control, next };
+  return { state, live, busy, error, secondsLeft, nextIn, control, next, hold };
 }
 
 /** What the main button does at each stage. */
 export function nextLabel(state: HostState): string | null {
-  const { status, currentIndex, totalQuestions } = state.game;
+  const { status, currentIndex, totalQuestions, autoAdvance } = state.game;
+  const last = currentIndex >= totalQuestions - 1;
   switch (status) {
     case "LOBBY":
       return "Start game";
     case "QUESTION":
       return "Skip to answer";
     case "REVEAL":
-      return currentIndex >= totalQuestions - 1 ? "Final results" : "Leaderboard";
+      return last ? "Final results" : autoAdvance ? "Next question" : "Leaderboard";
     case "LEADERBOARD":
       return "Next question";
     case "ENDED":

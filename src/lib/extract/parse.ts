@@ -35,6 +35,11 @@ const SECTION_RE = /^(?:(?:test|part|section|exam|quiz)\s+[ivx\d]+\b|[ivx]{1,5}\
 const PAGE_NUMBER_RE = /^(?:page\s*)?\d{1,4}(?:\s*(?:of|\/)\s*\d{1,4})?$/i;
 const FORM_FIELD_RE = /^(?:name|date|score|section|grade|teacher|subject|year|class)\s*[:_]/i;
 const INLINE_CHOICE_SPLIT_RE = /(?:^|\s+)\(?([a-f])\s*[.)]\s+/gi;
+// Explanations of the answer are for the teacher, not part of the question.
+const EXPLANATION_WORDS = "explanations?|rationale|reason(?:ing)?|solution|justification|feedback|paliwanag";
+// A label, then ":" or a spaced dash: "Explanation: …", "Rationale – …".
+const EXPLANATION_RE = new RegExp(`^(?:${EXPLANATION_WORDS}|note|why)(?:\\s*:|\\s+[–—-]\\s)`, "i");
+const INLINE_EXPLANATION_RE = new RegExp(`\\s*[(\\[]?\\b(?:${EXPLANATION_WORDS})(?:\\s*:|\\s+[–—-]\\s).*$`, "i");
 
 const TRUE_WORDS = new Set(["true", "t", "tama", "yes"]);
 const FALSE_WORDS = new Set(["false", "f", "mali", "no"]);
@@ -59,11 +64,14 @@ export function parseQuestionsFromText(input: string): ExtractionResult {
   let current: Block | null = null;
   let trueFalseSection = false;
   let lastWasChoice = false;
+  // Inside an "Explanation: …" paragraph, which may wrap over several lines.
+  let inExplanation = false;
 
   const flush = () => {
     if (current) blocks.push(current);
     current = null;
     lastWasChoice = false;
+    inExplanation = false;
   };
 
   for (const rawLine of body) {
@@ -87,15 +95,24 @@ export function parseQuestionsFromText(input: string): ExtractionResult {
       continue;
     }
 
+    if (EXPLANATION_RE.test(line)) {
+      inExplanation = true;
+      lastWasChoice = false;
+      continue;
+    }
+
     const answer = line.match(ANSWER_LINE_RE);
     if (answer && current) {
-      current.answerHint = answer[1].trim();
+      // "Answer: D. Explanation: …" keeps only the answer.
+      current.answerHint = stripExplanation(answer[1]) || null;
       current.raw.push(line);
+      inExplanation = false;
       continue;
     }
 
     const choice = current ? line.match(CHOICE_RE) : null;
     if (current && choice && choice[2].trim()) {
+      inExplanation = false;
       const split = splitInlineChoices(line);
       for (const c of split) {
         const parsed = markChoice(c);
@@ -119,6 +136,8 @@ export function parseQuestionsFromText(input: string): ExtractionResult {
       };
       continue;
     }
+
+    if (inExplanation) continue; // the explanation wrapping onto more lines
 
     if (current) {
       // A wrapped line: belongs to the last choice if we're in the choices,
@@ -225,8 +244,13 @@ function looksLikeListOfNumbers(line: string): boolean {
   return /^(\d{1,3}\s*[.):-]\s*[a-f]\b\s*){3,}$/i.test(line);
 }
 
+/** "April 18, 2000 Explanation: This is the date…" → "April 18, 2000". */
+function stripExplanation(s: string): string {
+  return s.replace(INLINE_EXPLANATION_RE, "").trim();
+}
+
 function markChoice(raw: string): { text: string; marked: boolean } {
-  let text = raw.trim();
+  let text = stripExplanation(raw);
   let marked = false;
   if (/^\*\*.+\*\*$/.test(text)) {
     marked = true; // the whole choice is bold in Word
@@ -319,11 +343,13 @@ function mapAnswerKey(blocks: Block[], key: KeyEntry[]): (string | null)[] {
 // ── building a question ─────────────────────────────────────────────────────
 
 function buildQuestion(block: Block, keyValue: string | null): ExtractedQuestion | SkippedItem {
-  const text = stripMarkers(block.text);
+  const text = stripExplanation(stripMarkers(block.text));
   const excerpt = block.raw.join(" ").slice(0, 160);
-  let choices = block.choices.slice(0, MAX_CHOICES);
+  // Wrapped lines are added after markChoice, so strip explanations again.
+  let choices = block.choices.slice(0, MAX_CHOICES).map((c) => ({ ...c, text: stripExplanation(c.text) }));
 
-  const hint = block.answerHint ?? keyValue;
+  const rawHint = block.answerHint ?? keyValue;
+  const hint = rawHint ? stripExplanation(rawHint) || null : null;
   const tfFromHint = hint ? toTrueFalse(hint) : null;
   const isTrueFalse =
     choices.length === 0 &&
@@ -383,6 +409,10 @@ function buildQuestion(block: Block, keyValue: string | null): ExtractedQuestion
   return { text, choices: choices.map((c) => c.text), correctIndex, type: "MULTIPLE_CHOICE" };
 }
 
+function isAnswerCell(value: string): boolean {
+  return /^\(?[a-f]\)?\.?$/i.test(value.trim()) || /^[1-6]$/.test(value.trim());
+}
+
 function letterIndex(value: string): number | null {
   const m = value.trim().match(/^\(?([a-f])\)?\.?(?:\s|$)/i);
   return m ? m[1].toLowerCase().charCodeAt(0) - 97 : null;
@@ -400,7 +430,9 @@ function toTrueFalse(value: string): boolean | null {
 function parseTable(rows: SheetRows, headerIndex: number): ExtractionResult {
   const header = rows[headerIndex].map((h) => h.toLowerCase());
   const qCol = header.findIndex((h) => /^(question|item|tanong)s?\b/.test(h));
-  const answerCol = header.findIndex((h) => /answer|correct|key|sagot/.test(h));
+  const answerCol = header.findIndex(
+    (h) => /answer|correct|key|sagot/.test(h) && !/explan|rationale|reason|paliwanag/.test(h),
+  );
   const choiceCols = header
     .map((h, i) => ({ h, i }))
     .filter(
@@ -438,7 +470,12 @@ function parsePositional(rows: SheetRows): ExtractionResult {
   for (const row of rows) {
     const cells = row.filter(Boolean);
     if (cells.length < 2) continue;
-    const [text, ...rest] = cells;
+    const [text, ...cellsAfter] = cells;
+    // A trailing explanation after the answer column isn't a choice.
+    let rest = cellsAfter.filter((c) => !EXPLANATION_RE.test(c));
+    if (rest.length >= 4 && rest[rest.length - 1].length > 40 && isAnswerCell(rest[rest.length - 2])) {
+      rest = rest.slice(0, -1);
+    }
     const last = rest[rest.length - 1];
     const lastIsAnswer =
       rest.length >= 3 &&

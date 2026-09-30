@@ -1,21 +1,23 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import QRCode from "qrcode";
-import { Check, Maximize, X } from "lucide-react";
+import { Check, Maximize, Pause, Volume2, VolumeX, X } from "lucide-react";
 import { nextLabel, useHostGame } from "@/lib/useHostGame";
 import type { HostState } from "@/lib/game/types";
 import { ChoiceShape, choiceStyle } from "@/components/choices";
 import { Logo } from "@/components/Logo";
+import { FinalResults } from "./FinalResults";
 import { formatNumber, formatPin, plural } from "@/lib/format";
+import { isMuted, playBuzzer, playCountdownBeep, playTick, setMuted, unlockSounds } from "@/lib/sounds";
 
 /**
  * The projector screen. Sized in viewport units so it fills any projector
  * or TV, from a 1280×720 classroom beamer up.
  */
 export function HostScreen({ gameId }: { gameId: string }) {
-  const { state, busy, error, secondsLeft, control, next } = useHostGame(gameId, { autoReveal: true });
+  const { state, busy, error, secondsLeft, nextIn, control, next, hold } = useHostGame(gameId);
+  useCountdownSounds(state?.game.status, state?.game.currentIndex, secondsLeft, nextIn);
 
   if (!state) {
     return (
@@ -41,16 +43,80 @@ export function HostScreen({ gameId }: { gameId: string }) {
     <main className="relative flex min-h-dvh flex-col">
       {state.game.status === "LOBBY" && <Lobby state={state} startButton={nextButton} onKick={(id) => control({ action: "kick", playerId: id })} />}
       {state.game.status === "QUESTION" && <Question state={state} secondsLeft={secondsLeft} skipButton={nextButton} />}
-      {state.game.status === "REVEAL" && <Reveal state={state} nextButton={nextButton} />}
+      {state.game.status === "REVEAL" && (
+        <Reveal state={state} nextButton={nextButton} autoAdvance={<AutoAdvance state={state} nextIn={nextIn} onPause={hold} busy={busy} />} />
+      )}
       {state.game.status === "LEADERBOARD" && <Leaderboard state={state} nextButton={nextButton} />}
-      {state.game.status === "ENDED" && <Podium state={state} />}
+      {state.game.status === "ENDED" && <FinalResults state={state} />}
       {error ? (
         <p role="alert" className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-xl bg-danger px-4 py-2 font-bold text-white">
           {error}
         </p>
       ) : null}
-      <FullscreenButton />
+      <div className="absolute right-3 bottom-3 flex gap-1">
+        <SoundButton />
+        <FullscreenButton />
+      </div>
     </main>
+  );
+}
+
+/**
+ * Ticks each second of the question clock (sharper in the last 5), a buzzer
+ * when time runs out, and beeps on the "next question in…" countdown.
+ */
+function useCountdownSounds(
+  status: string | undefined,
+  index: number | undefined,
+  secondsLeft: number | null,
+  nextIn: number | null,
+) {
+  useEffect(() => {
+    // Browsers only allow sound once the page has been clicked.
+    const unlock = () => unlockSounds();
+    window.addEventListener("pointerdown", unlock);
+    window.addEventListener("keydown", unlock);
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, []);
+
+  const played = useRef<string | null>(null);
+  useEffect(() => {
+    let key: string | null = null;
+    let play: (() => void) | null = null;
+    if (status === "QUESTION" && secondsLeft !== null) {
+      key = `q${index}:${secondsLeft}`;
+      play = secondsLeft === 0 ? playBuzzer : () => playTick(secondsLeft <= 5);
+    } else if (status === "REVEAL" && nextIn !== null && nextIn > 0) {
+      key = `n${index}:${nextIn}`;
+      play = () => playCountdownBeep(nextIn === 1);
+    }
+    if (!key || !play || played.current === key) return;
+    played.current = key;
+    play();
+  }, [status, index, secondsLeft, nextIn]);
+}
+
+function SoundButton() {
+  const [muted, setMutedState] = useState(isMuted);
+  const label = muted ? "Turn sound on" : "Mute sound";
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      aria-pressed={muted}
+      onClick={() => {
+        setMuted(!muted);
+        setMutedState(!muted);
+        unlockSounds();
+      }}
+      className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl text-muted opacity-40 hover:bg-white hover:opacity-100"
+    >
+      {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+    </button>
   );
 }
 
@@ -172,18 +238,29 @@ function Question({
 
 // ── reveal ──────────────────────────────────────────────────────────────────
 
-function Reveal({ state, nextButton }: { state: HostState; nextButton: React.ReactNode }) {
+function Reveal({
+  state,
+  nextButton,
+  autoAdvance,
+}: {
+  state: HostState;
+  nextButton: React.ReactNode;
+  autoAdvance: React.ReactNode;
+}) {
   const question = state.question!;
   const most = Math.max(1, ...state.distribution);
   const correct = state.distribution[question.correctIndex] ?? 0;
   return (
     <div className="flex flex-1 flex-col gap-[3vh] px-[4vw] py-[4vh]">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <QuestionPill state={state} />
         <span className="text-[clamp(16px,1.4vw,22px)] font-bold text-muted">
           {correct} of {state.activeCount} got it right
         </span>
-        {nextButton}
+        <div className="flex items-center gap-3">
+          {autoAdvance}
+          {nextButton}
+        </div>
       </div>
       <p className="text-center font-display text-[clamp(24px,2.6vw,40px)] leading-tight font-extrabold">{question.text}</p>
       <div className="flex flex-1 items-end justify-center gap-[3vw]" aria-label="Answers per choice">
@@ -244,52 +321,44 @@ function Leaderboard({ state, nextButton }: { state: HostState; nextButton: Reac
   );
 }
 
-// ── final podium ────────────────────────────────────────────────────────────
+// ── pieces ──────────────────────────────────────────────────────────────────
 
-function Podium({ state }: { state: HostState }) {
-  const [first, second, third] = state.leaderboard;
-  const places = [
-    { p: second, height: "h-[22vh]", label: "2" },
-    { p: first, height: "h-[32vh]", label: "1" },
-    { p: third, height: "h-[15vh]", label: "3" },
-  ];
+/** "Next question in 4 · Pause" while the answer screen counts down. */
+function AutoAdvance({
+  state,
+  nextIn,
+  onPause,
+  busy,
+}: {
+  state: HostState;
+  nextIn: number | null;
+  onPause: () => void;
+  busy: boolean;
+}) {
+  if (!state.game.autoAdvance) return null;
+  const last = state.game.currentIndex >= state.game.totalQuestions - 1;
+  if (state.game.nextAt === null) {
+    return <span className="text-[clamp(16px,1.4vw,22px)] font-bold text-muted">Paused</span>;
+  }
   return (
-    <div className="flex flex-1 flex-col items-center gap-[3vh] px-[4vw] py-[5vh]">
-      <h1 className="font-display text-[clamp(36px,3.9vw,56px)] font-extrabold">Final results</h1>
-      <p className="text-[clamp(16px,1.4vw,22px)] font-bold text-muted">{state.game.quizTitle}</p>
-      <div className="flex w-full max-w-250 flex-1 items-end justify-center gap-[2vw]">
-        {places.map(({ p, height, label }) =>
-          p ? (
-            <div key={label} className="flex w-1/3 flex-col items-center gap-3">
-              <span className="max-w-full truncate text-[clamp(20px,2.2vw,34px)] font-bold">{p.nickname}</span>
-              <span className="font-display text-[clamp(18px,1.8vw,28px)] font-extrabold text-muted">{formatNumber(p.score)}</span>
-              <div
-                className={`flex w-full items-start justify-center rounded-t-3xl pt-4 font-display text-[clamp(40px,5vw,80px)] font-extrabold text-white ${height} ${
-                  label === "1" ? "bg-brand" : "bg-ink"
-                }`}
-              >
-                {label}
-              </div>
-            </div>
-          ) : (
-            <div key={label} className="w-1/3" />
-          ),
-        )}
-      </div>
-      {state.leaderboard.length === 0 ? <p className="text-muted">Nobody played this game.</p> : null}
-      <div className="flex gap-3">
-        <Link href={`/dashboard/games/${state.game.id}`} className="btn btn-primary h-14 px-8 text-lg">
-          View report
-        </Link>
-        <Link href="/dashboard" className="btn btn-outline h-14 px-8 text-lg">
-          Dashboard
-        </Link>
-      </div>
+    <div className="flex items-center gap-3">
+      <span className="flex items-center gap-3 text-[clamp(16px,1.4vw,22px)] font-bold text-muted">
+        {last ? "Results in" : "Next question in"}
+        <span className="flex aspect-square w-[clamp(52px,5vw,72px)] items-center justify-center rounded-full bg-ink font-display text-[clamp(24px,2.4vw,36px)] font-extrabold text-white">
+          {nextIn ?? ""}
+        </span>
+      </span>
+      <button
+        type="button"
+        onClick={onPause}
+        disabled={busy}
+        className="btn btn-outline h-[clamp(52px,7vh,80px)] rounded-2xl px-[clamp(18px,2vw,32px)] text-[clamp(16px,1.6vw,24px)]"
+      >
+        <Pause size={22} /> Pause
+      </button>
     </div>
   );
 }
-
-// ── pieces ──────────────────────────────────────────────────────────────────
 
 function QuestionPill({ state }: { state: HostState }) {
   return (
@@ -341,7 +410,7 @@ function FullscreenButton() {
         if (document.fullscreenElement) void document.exitFullscreen();
         else void document.documentElement.requestFullscreen().catch(() => null);
       }}
-      className="absolute right-3 bottom-3 inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl text-muted opacity-40 hover:bg-white hover:opacity-100"
+      className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl text-muted opacity-40 hover:bg-white hover:opacity-100"
     >
       <Maximize size={20} />
     </button>

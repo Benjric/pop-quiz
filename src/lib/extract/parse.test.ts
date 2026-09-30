@@ -99,6 +99,34 @@ describe("parseQuestionsFromText", () => {
     expect(result.questions[0].choices[0]).toBe("The Earth's axis is tilted as it goes around the Sun");
   });
 
+  it("leaves out explanations, whether on their own lines or after a choice or answer", () => {
+    const text = [
+      "1. On what date did Secretary Gonzales authorize the Division's establishment?",
+      "A. March 2, 2000",
+      "B. April 13, 2000",
+      "C. October 30, 2000",
+      "D. April 18, 2000*",
+      "Explanation: This is the date the Division formally came into being, roughly two and a half",
+      "months after the City Council passed its resolution.",
+      "2. Which planet is known as the Red Planet?",
+      "A. Venus B. Mars C. Jupiter",
+      "Answer: B. Explanation: iron oxide on its surface makes it look red.",
+      "3. What is 2 + 2?",
+      "A. 3",
+      "B. 4 Explanation: two plus two is four.",
+      "Rationale – basic addition.",
+      "4. Is a feedback-loop a choice here? A. feedback-loop B. Solution",
+    ].join("\n");
+    const result = parseQuestionsFromText(text);
+    expect(result.questions).toHaveLength(4);
+    expect(result.questions[0].choices).toEqual(["March 2, 2000", "April 13, 2000", "October 30, 2000", "April 18, 2000"]);
+    expect(result.questions[0].correctIndex).toBe(3);
+    expect(result.questions[1].choices).toEqual(["Venus", "Mars", "Jupiter"]);
+    expect(result.questions[1].correctIndex).toBe(1);
+    expect(result.questions[2].choices).toEqual(["3", "4"]);
+    expect(result.questions[3].choices).toEqual(["feedback-loop", "Solution"]);
+  });
+
   it("does not glue headings, footers or passages onto the last choice", () => {
     const passage =
       "Read the passage below. The water cycle describes how water evaporates from the surface of the earth, rises into the atmosphere, cools and condenses into clouds, and falls again as precipitation.";
@@ -119,6 +147,20 @@ describe("parseQuestionsFromText", () => {
 });
 
 describe("parseQuestionsFromRows", () => {
+  it("ignores explanation columns and cells", () => {
+    const table = parseQuestionsFromRows([
+      ["Question", "A", "B", "C", "Answer Explanation", "Correct Answer"],
+      ["Red planet?", "Venus", "Mars", "Earth", "Iron oxide makes it red", "B"],
+    ]);
+    expect(table.questions[0]).toMatchObject({ choices: ["Venus", "Mars", "Earth"], correctIndex: 1 });
+
+    const positional = parseQuestionsFromRows([
+      ["Red planet?", "Venus", "Mars", "Earth", "B", "Iron oxide on the surface makes the planet look red"],
+      ["Largest planet?", "Jupiter", "Mars", "Earth", "A", "Jupiter is more than twice as massive as the rest"],
+    ]);
+    expect(positional.questions[0]).toMatchObject({ choices: ["Venus", "Mars", "Earth"], correctIndex: 1 });
+  });
+
   it("reads a table with a header row", () => {
     const rows = [
       ["Question", "A", "B", "C", "D", "Answer"],

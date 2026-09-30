@@ -1,0 +1,186 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { RotateCcw } from "lucide-react";
+import type { HostState, PodiumEntry } from "@/lib/game/types";
+import { formatNumber } from "@/lib/format";
+
+/**
+ * The end of the game on the projector, in two acts:
+ *   1. Top 5: rows rise in from 5th up to 1st.
+ *   2. Podium: 3rd, 2nd, then 1st rise up, and confetti falls for the winner.
+ * "Replay" runs it again. With reduced motion everything simply appears.
+ */
+
+const ROW_STEP_S = 0.8; // between top-5 rows
+const TOP5_HOLD_S = 3; // how long the full top 5 stays up
+const BAR_DELAY_S = { 3: 0.3, 2: 1.4, 1: 2.6 } as const; // podium, by place
+const BAR_S = 0.9;
+const CONFETTI_AT_S = BAR_DELAY_S[1] + BAR_S;
+
+export function FinalResults({ state }: { state: HostState }) {
+  const [run, setRun] = useState(0);
+  return <Sequence key={run} state={state} onReplay={() => setRun((r) => r + 1)} />;
+}
+
+function Sequence({ state, onReplay }: { state: HostState; onReplay: () => void }) {
+  const top = state.leaderboard.slice(0, 5);
+  const withTop5 = top.length > 3;
+  const [act, setAct] = useState<"top5" | "podium">(withTop5 ? "top5" : "podium");
+
+  useEffect(() => {
+    if (!withTop5) return;
+    const ms = ((top.length - 1) * ROW_STEP_S + 0.6 + TOP5_HOLD_S) * 1000;
+    const t = setTimeout(() => setAct("podium"), ms);
+    return () => clearTimeout(t);
+  }, [withTop5, top.length]);
+
+  return (
+    <div className="relative flex flex-1 flex-col items-center gap-[3vh] overflow-hidden px-[4vw] py-[5vh]">
+      {act === "top5" ? <TopFive top={top} /> : <Podium top={top.slice(0, 3)} quizTitle={state.game.quizTitle} />}
+      {top.length === 0 ? <p className="text-xl font-bold text-muted">Nobody played this game.</p> : null}
+      {act === "podium" ? (
+        <div className="anim-rise flex flex-wrap justify-center gap-3" style={{ animationDelay: `${top.length ? CONFETTI_AT_S + 0.8 : 0}s` }}>
+          <button type="button" onClick={onReplay} className="btn btn-outline h-14 px-6 text-lg">
+            <RotateCcw size={20} /> Replay
+          </button>
+          <Link href={`/dashboard/games/${state.game.id}`} className="btn btn-primary h-14 px-8 text-lg">
+            View report
+          </Link>
+          <Link href="/dashboard" className="btn btn-outline h-14 px-8 text-lg">
+            Dashboard
+          </Link>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TopFive({ top }: { top: PodiumEntry[] }) {
+  return (
+    <>
+      <h1 className="anim-rise font-display text-[clamp(40px,4.4vw,64px)] font-extrabold">Top {top.length}</h1>
+      <ol className="flex w-full max-w-250 flex-1 flex-col justify-center gap-[1.8vh]">
+        {top.map((p, i) => {
+          const first = i === 0;
+          return (
+            <li
+              key={p.nickname}
+              className={`anim-rise flex items-center gap-6 rounded-3xl px-8 ${
+                first
+                  ? "h-[clamp(72px,12vh,112px)] bg-brand text-white shadow-[0_12px_32px_-12px_rgba(75,43,181,0.7)]"
+                  : "h-[clamp(60px,10vh,92px)] border-2 border-line bg-white"
+              }`}
+              // Last place first, the winner last.
+              style={{ animationDelay: `${(top.length - 1 - i) * ROW_STEP_S}s` }}
+            >
+              <span
+                className={`w-14 font-display text-[clamp(28px,3vw,46px)] font-extrabold ${
+                  first ? "" : i < 3 ? "text-brand" : "text-muted"
+                }`}
+              >
+                {p.rank}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-[clamp(22px,2.3vw,36px)] font-bold">{p.nickname}</span>
+              <span className="font-display text-[clamp(24px,2.5vw,40px)] font-extrabold">{formatNumber(p.score)}</span>
+            </li>
+          );
+        })}
+      </ol>
+    </>
+  );
+}
+
+function Podium({ top, quizTitle }: { top: PodiumEntry[]; quizTitle: string }) {
+  const [first, second, third] = top;
+  const columns = [
+    { p: second, place: 2 as const, height: "h-[24vh]", bar: "bg-ink" },
+    { p: first, place: 1 as const, height: "h-[34vh]", bar: "bg-brand" },
+    { p: third, place: 3 as const, height: "h-[16vh]", bar: "bg-ink" },
+  ];
+  return (
+    <>
+      <div className="anim-rise flex flex-col items-center gap-1 text-center">
+        <h1 className="font-display text-[clamp(40px,4.4vw,64px)] font-extrabold">Final results</h1>
+        <p className="text-[clamp(16px,1.4vw,22px)] font-bold text-muted">{quizTitle}</p>
+      </div>
+      <div className="flex w-full max-w-250 flex-1 items-end justify-center gap-[2vw]">
+        {columns.map(({ p, place, height, bar }) => {
+          if (!p) return <div key={place} className="w-1/3" />;
+          const barAt = BAR_DELAY_S[place];
+          return (
+            <div key={place} className="flex w-1/3 flex-col items-center gap-2">
+              <div className="anim-pop flex max-w-full flex-col items-center" style={{ animationDelay: `${barAt + BAR_S - 0.2}s` }}>
+                {place === 1 ? (
+                  <svg viewBox="0 0 24 24" className="mb-1 w-[clamp(36px,4vw,60px)]" fill="#E8A317" aria-hidden>
+                    <path d="M3 8 L7.5 12 L12 5 L16.5 12 L21 8 L19 19 H5 Z" />
+                  </svg>
+                ) : null}
+                <span
+                  className={`max-w-full truncate font-bold ${place === 1 ? "text-[clamp(26px,2.9vw,44px)]" : "text-[clamp(20px,2.2vw,34px)]"}`}
+                >
+                  {p.nickname}
+                </span>
+                <span className="font-display text-[clamp(18px,1.8vw,28px)] font-extrabold text-muted">
+                  {formatNumber(p.score)}
+                </span>
+              </div>
+              <div
+                className={`anim-grow flex w-full items-start justify-center rounded-t-3xl pt-4 font-display text-[clamp(44px,5.5vw,88px)] font-extrabold text-white ${height} ${bar}`}
+                style={{ animationDelay: `${barAt}s`, animationDuration: `${BAR_S}s` }}
+              >
+                {place}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {first ? <Confetti /> : null}
+    </>
+  );
+}
+
+// Fixed pseudo-random pieces (no Math.random during render).
+const COLORS = ["#C8382B", "#1F5FBF", "#E8A317", "#1D7A4C", "#4B2BB5", "#A3317A", "#0E6F7A"];
+const rand = (i: number, n: number) => {
+  const x = Math.sin(i * 12.9898 + n * 78.233) * 43758.5453;
+  return x - Math.floor(x);
+};
+const PIECES = Array.from({ length: 80 }, (_, i) => ({
+  left: rand(i, 1) * 100,
+  delay: CONFETTI_AT_S + rand(i, 2) * 1.4,
+  duration: 2.8 + rand(i, 3) * 2,
+  drift: Math.round((rand(i, 4) - 0.5) * 260),
+  spin: Math.round(360 + rand(i, 5) * 720),
+  width: Math.round(8 + rand(i, 6) * 8),
+  height: Math.round(12 + rand(i, 7) * 10),
+  color: COLORS[i % COLORS.length],
+  round: i % 5 === 0,
+}));
+
+function Confetti() {
+  return (
+    <div className="pointer-events-none absolute inset-0" aria-hidden>
+      {PIECES.map((c, i) => (
+        <span
+          key={i}
+          className="confetti-piece"
+          style={
+            {
+              left: `${c.left}%`,
+              width: c.width,
+              height: c.round ? c.width : c.height,
+              borderRadius: c.round ? "50%" : 2,
+              background: c.color,
+              animationDelay: `${c.delay}s`,
+              animationDuration: `${c.duration}s`,
+              "--drift": `${c.drift}px`,
+              "--spin": `${c.spin}deg`,
+            } as React.CSSProperties
+          }
+        />
+      ))}
+    </div>
+  );
+}

@@ -74,6 +74,10 @@ model Game {
   questionStartedAt DateTime?
   timeLimitSec      Int
   shuffleChoices    Boolean    @default(false)
+  // Move on by itself a few seconds after each answer is shown.
+  autoAdvance       Boolean    @default(true)
+  // When the current answer was shown; null while paused or not revealing.
+  revealedAt        DateTime?
   createdAt         DateTime   @default(now())
   endedAt           DateTime?
 

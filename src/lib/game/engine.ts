@@ -12,6 +12,10 @@ import type { GameStatus, HostState, PlayerState } from "./types";
  *
  *   LOBBY → QUESTION(0) → REVEAL(0) → LEADERBOARD(0) → QUESTION(1) → …
  *         … → REVEAL(last) → ENDED (final podium)
+ *
+ * With auto-advance on, REVEAL goes straight to the next QUESTION (or to
+ * ENDED) AUTO_ADVANCE_MS after the answer was shown, with no leaderboard
+ * in between. The teacher can pause that countdown or skip ahead.
  */
 
 export class GameError extends Error {
@@ -26,6 +30,9 @@ export class GameError extends Error {
 /** Games are only joinable for a day; older unfinished games are ignored. */
 const GAME_LIFETIME_MS = 24 * 60 * 60 * 1000;
 
+/** With auto-advance, how long the answer stays up before the game moves on. */
+export const AUTO_ADVANCE_MS = 5000;
+
 // ── creating ────────────────────────────────────────────────────────────────
 
 export type GameSettings = {
@@ -34,6 +41,7 @@ export type GameSettings = {
   excludedIds: string[];
   timeLimitSec: number;
   shuffleChoices: boolean;
+  autoAdvance: boolean;
 };
 
 export async function createGame(teacherId: string, quizId: string, settings: GameSettings) {
@@ -55,6 +63,7 @@ export async function createGame(teacherId: string, quizId: string, settings: Ga
       pin,
       timeLimitSec: settings.timeLimitSec,
       shuffleChoices: settings.shuffleChoices,
+      autoAdvance: settings.autoAdvance,
       questions: {
         create: picked.map((q, order) => {
           const base = { choices: q.choices, correctIndex: q.correctIndex! };
@@ -110,16 +119,8 @@ export async function advance(gameId: string, from: Expected) {
       return start(gameId);
     case "QUESTION":
       return reveal(gameId, from.index); // "Skip": close the question now
-    case "REVEAL": {
-      const total = await prisma.gameQuestion.count({ where: { gameId } });
-      if (from.index >= total - 1) return endGame(gameId);
-      const moved = await prisma.game.updateMany({
-        where: { id: gameId, status: "REVEAL", currentIndex: from.index },
-        data: { status: "LEADERBOARD" },
-      });
-      if (moved.count) await publishGame(gameId);
-      return;
-    }
+    case "REVEAL":
+      return advanceFromReveal(gameId, from.index, { onlyIfScheduled: false });
     case "LEADERBOARD": {
       const moved = await prisma.game.updateMany({
         where: { id: gameId, status: "LEADERBOARD", currentIndex: from.index },
@@ -143,10 +144,46 @@ async function start(gameId: string) {
   if (moved.count) await publishGame(gameId);
 }
 
+/**
+ * Leaves the answer screen: to the next question (auto-advance), the
+ * leaderboard (manual games), or the end after the last question.
+ * `onlyIfScheduled` is for the timer: it does nothing while paused.
+ */
+async function advanceFromReveal(gameId: string, index: number, { onlyIfScheduled }: { onlyIfScheduled: boolean }) {
+  const game = await prisma.game.findUnique({
+    where: { id: gameId },
+    select: { autoAdvance: true, _count: { select: { questions: true } } },
+  });
+  if (!game) return;
+  const last = index >= game._count.questions - 1;
+  const where = {
+    id: gameId,
+    status: "REVEAL" as const,
+    currentIndex: index,
+    ...(onlyIfScheduled ? { revealedAt: { not: null } } : {}),
+  };
+  const data: Prisma.GameUpdateManyMutationInput = last
+    ? { status: "ENDED", endedAt: new Date(), revealedAt: null }
+    : game.autoAdvance
+      ? { status: "QUESTION", currentIndex: index + 1, questionStartedAt: new Date(), revealedAt: null }
+      : { status: "LEADERBOARD", revealedAt: null };
+  const moved = await prisma.game.updateMany({ where, data });
+  if (moved.count) await publishGame(gameId);
+}
+
+/** Stops the auto-advance countdown on the current answer screen. */
+export async function holdReveal(gameId: string, index: number) {
+  const moved = await prisma.game.updateMany({
+    where: { id: gameId, status: "REVEAL", currentIndex: index, revealedAt: { not: null } },
+    data: { revealedAt: null },
+  });
+  if (moved.count) await publishGame(gameId);
+}
+
 export async function reveal(gameId: string, index: number) {
   const moved = await prisma.game.updateMany({
     where: { id: gameId, status: "QUESTION", currentIndex: index },
-    data: { status: "REVEAL" },
+    data: { status: "REVEAL", revealedAt: new Date() },
   });
   if (!moved.count) return;
 
@@ -195,6 +232,31 @@ async function closeIfExpired(game: {
     return true;
   }
   return false;
+}
+
+/** Moves past the answer screen lazily once its countdown has run out. */
+async function advanceIfDue(game: {
+  id: string;
+  status: string;
+  currentIndex: number;
+  autoAdvance: boolean;
+  revealedAt: Date | null;
+}): Promise<boolean> {
+  const at = nextAtOf(game);
+  if (at === null || Date.now() < at) return false;
+  await advanceFromReveal(game.id, game.currentIndex, { onlyIfScheduled: true });
+  return true;
+}
+
+function nextAtOf(game: { status: string; autoAdvance: boolean; revealedAt: Date | null }): number | null {
+  return game.status === "REVEAL" && game.autoAdvance && game.revealedAt
+    ? game.revealedAt.getTime() + AUTO_ADVANCE_MS
+    : null;
+}
+
+/** Brings a game up to date before a screen reads it. */
+async function catchUp(game: Parameters<typeof closeIfExpired>[0] & Parameters<typeof advanceIfDue>[0]) {
+  return (await closeIfExpired(game)) || (await advanceIfDue(game));
 }
 
 async function revealIfEveryoneAnswered(gameId: string) {
@@ -292,7 +354,7 @@ async function loadFullGame(gameId: string) {
 export async function getHostState(gameId: string): Promise<HostState | null> {
   let game = await loadFullGame(gameId);
   if (!game) return null;
-  if (await closeIfExpired(game)) game = (await loadFullGame(gameId))!;
+  if (await catchUp(game)) game = (await loadFullGame(gameId))!;
 
   const current = game.status === "LOBBY" ? null : (game.questions[game.currentIndex] ?? null);
   const active = game.players.filter((p) => !p.kickedAt);
@@ -326,7 +388,9 @@ export async function getHostState(gameId: string): Promise<HostState | null> {
       currentIndex: game.currentIndex,
       totalQuestions: game.questions.length,
       timeLimitSec: game.timeLimitSec,
+      autoAdvance: game.autoAdvance,
       deadline: game.status === "QUESTION" ? deadlineOf(game) : null,
+      nextAt: nextAtOf(game),
       serverNow: Date.now(),
       createdAt: game.createdAt.toISOString(),
     },
@@ -359,7 +423,7 @@ export async function getPlayerState(playerId: string): Promise<PlayerState | nu
   if (!player) return null;
   let game = await loadFullGame(player.gameId);
   if (!game) return null;
-  if (await closeIfExpired(game)) game = (await loadFullGame(player.gameId))!;
+  if (await catchUp(game)) game = (await loadFullGame(player.gameId))!;
 
   const me = game.players.find((p) => p.id === playerId)!;
   const active = game.players.filter((p) => !p.kickedAt);
@@ -379,6 +443,7 @@ export async function getPlayerState(playerId: string): Promise<PlayerState | nu
     index: game.currentIndex,
     total: game.questions.length,
     deadline: status === "QUESTION" ? deadlineOf(game) : null,
+    nextAt: nextAtOf(game),
     serverNow: Date.now(),
     question: showQuestion && current ? { text: current.text, choices: current.choices } : null,
     correctIndex: revealed && current ? current.correctIndex : null,
@@ -398,7 +463,7 @@ export async function getPlayerState(playerId: string): Promise<PlayerState | nu
       : null,
     podium:
       status === "ENDED"
-        ? ranked.slice(0, 3).map((p) => ({ nickname: p.nickname, score: p.score, rank: p.rank }))
+        ? ranked.slice(0, 5).map((p) => ({ nickname: p.nickname, score: p.score, rank: p.rank }))
         : [],
   };
 }

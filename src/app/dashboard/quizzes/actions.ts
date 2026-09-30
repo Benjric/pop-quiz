@@ -89,6 +89,7 @@ const GameInput = z.object({
   excludedIds: z.array(z.string()).max(500),
   timeLimitSec: z.number().int().min(5).max(240),
   shuffleChoices: z.boolean(),
+  autoAdvance: z.boolean(),
 });
 
 export async function startGame(input: z.input<typeof GameInput>): Promise<ActionResult> {

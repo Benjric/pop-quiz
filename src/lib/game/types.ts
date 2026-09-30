@@ -25,8 +25,11 @@ export type HostState = {
     currentIndex: number;
     totalQuestions: number;
     timeLimitSec: number;
+    autoAdvance: boolean;
     /** Epoch ms when the current question closes. */
     deadline: number | null;
+    /** Epoch ms when the answer screen moves on by itself; null if it won't. */
+    nextAt: number | null;
     serverNow: number;
     createdAt: string;
   };
@@ -46,6 +49,8 @@ export type PlayerState = {
   index: number;
   total: number;
   deadline: number | null;
+  /** Epoch ms when the answer screen moves on by itself; null if it won't. */
+  nextAt: number | null;
   serverNow: number;
   question: { text: string; choices: string[] } | null;
   /** Only sent once the answer has been revealed. */

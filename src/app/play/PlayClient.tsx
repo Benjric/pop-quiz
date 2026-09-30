@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useCountdown, useLiveGame } from "@/lib/useLiveGame";
 import type { PlayerState } from "@/lib/game/types";
 import { ChoiceShape, choiceStyle } from "@/components/choices";
@@ -152,9 +152,23 @@ function JoinForm({ initialPin, onJoined }: { initialPin: string; onJoined: () =
 
 function InGame({ state, refresh, leave }: { state: PlayerState; refresh: () => Promise<void>; leave: () => void }) {
   const secondsLeft = useCountdown(state.deadline, state.serverNow);
+  const nextIn = useCountdown(state.nextAt, state.serverNow);
   const [pending, setPending] = useState<{ index: number; choice: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { me } = state;
+
+  // Check in when a clock runs out, in case the live update is missed.
+  const wakeAt = state.nextAt ?? (state.deadline !== null ? state.deadline + 1200 : null);
+  useEffect(() => {
+    if (wakeAt === null) return;
+    const t = setTimeout(() => void refresh(), Math.max(0, wakeAt - state.serverNow) + 400);
+    return () => clearTimeout(t);
+  }, [wakeAt, state.serverNow, refresh]);
+
+  const upNext =
+    nextIn !== null
+      ? `${state.index >= state.total - 1 ? "Final results" : "Next question"} in ${nextIn}…`
+      : "Look at the big screen for the next question";
 
   if (me.kicked) {
     return (
@@ -296,7 +310,7 @@ function InGame({ state, refresh, leave }: { state: PlayerState; refresh: () => 
               + {formatNumber(mine.points ?? 0)}
             </p>
             <p className="text-phone-lg font-bold">You&apos;re in {ordinal(me.rank)} place</p>
-            <p className="font-semibold text-[#D5EFE1]">Look at the big screen for the next question</p>
+            <p className="font-semibold text-[#D5EFE1]">{upNext}</p>
           </Screen>
         );
       }
@@ -317,7 +331,7 @@ function InGame({ state, refresh, leave }: { state: PlayerState; refresh: () => 
             </p>
           ) : null}
           <p className="text-phone-lg font-bold">You&apos;re in {ordinal(me.rank)} place</p>
-          <p className="font-semibold text-white/80">Look at the big screen for the next question</p>
+          <p className="font-semibold text-white/80">{upNext}</p>
         </Screen>
       );
     }
@@ -337,13 +351,24 @@ function InGame({ state, refresh, leave }: { state: PlayerState; refresh: () => 
     case "ENDED":
       return (
         <Screen tone="brand">
-          <p className="text-phone-lg font-bold text-[#E4DDFB]">Game over · you finished</p>
-          <h1 className="font-display text-phone-giant font-extrabold">{ordinal(me.rank)}</h1>
-          <p className="text-phone-lg font-bold">{formatNumber(me.score)} points</p>
+          <p className="anim-rise text-phone-lg font-bold text-[#E4DDFB]">Game over · you finished</p>
+          <h1 className="anim-pop font-display text-phone-giant font-extrabold" style={{ animationDelay: "0.3s" }}>
+            {ordinal(me.rank)}
+          </h1>
+          <p className="anim-rise text-phone-lg font-bold" style={{ animationDelay: "0.6s" }}>
+            {formatNumber(me.score)} points
+          </p>
           {state.podium.length ? (
             <ol className="flex w-full max-w-xs flex-col gap-2 text-left">
-              {state.podium.map((p) => (
-                <li key={p.nickname} className="flex items-center gap-3 rounded-2xl bg-white px-4 py-2.5 text-ink">
+              {state.podium.map((p, i) => (
+                <li
+                  key={p.nickname}
+                  className={`anim-rise flex items-center gap-3 rounded-2xl px-4 py-2.5 ${
+                    p.nickname === me.nickname ? "bg-[#E8A317] text-ink" : "bg-white text-ink"
+                  }`}
+                  // 5th first, the winner last, as on the big screen.
+                  style={{ animationDelay: `${1 + (state.podium.length - 1 - i) * 0.5}s` }}
+                >
                   <span className="w-6 shrink-0 font-display text-xl font-extrabold text-brand">{p.rank}</span>
                   <span className="min-w-0 flex-1 truncate font-bold">{p.nickname}</span>
                   <span className="shrink-0 font-display font-extrabold">{formatNumber(p.score)}</span>
@@ -351,7 +376,9 @@ function InGame({ state, refresh, leave }: { state: PlayerState; refresh: () => 
               ))}
             </ol>
           ) : null}
-          <JoinAnother onClick={leave} />
+          <div className="anim-rise" style={{ animationDelay: `${1.6 + state.podium.length * 0.5}s` }}>
+            <JoinAnother onClick={leave} />
+          </div>
         </Screen>
       );
   }

@@ -104,7 +104,7 @@ function Upload({ onDone }: { onDone: (review: Review) => void }) {
         <h1 className="font-display text-3xl font-extrabold">New quiz</h1>
         <p className="mt-1 text-muted">
           Upload a test or worksheet. Numbered questions with lettered choices (A, B, C…) and true/false items are
-          pulled out; titles, directions and page numbers are skipped. Answers marked with *, bold, &ldquo;Answer:
+          pulled out; titles, directions, explanations and page numbers are skipped. Answers marked with *, bold, &ldquo;Answer:
           B&rdquo; or an answer key are picked up too.
         </p>
       </div>

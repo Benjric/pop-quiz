@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Pause } from "lucide-react";
 import { nextLabel, useHostGame } from "@/lib/useHostGame";
 import type { HostPlayer, HostState } from "@/lib/game/types";
 import { ChoiceBadge } from "@/components/choices";
@@ -17,11 +17,11 @@ const STATUS_LABEL = {
 
 /**
  * The teacher's laptop view while the projector shows the game: who has
- * answered, how the class is doing, and the controls. The projector screen
- * closes questions when the clock runs out, so this one doesn't have to.
+ * answered, how the class is doing, and the controls. Like the projector,
+ * it keeps the clocks moving, so the game runs even if only one is open.
  */
 export function Monitor({ gameId }: { gameId: string }) {
-  const { state, live, busy, error, secondsLeft, control, next } = useHostGame(gameId, { autoReveal: false });
+  const { state, live, busy, error, secondsLeft, nextIn, control, next, hold } = useHostGame(gameId);
 
   if (!state) return <p className="text-muted">Loading the game…</p>;
 
@@ -60,6 +60,15 @@ export function Monitor({ gameId }: { gameId: string }) {
             </Link>
           ) : (
             <>
+              {game.status === "REVEAL" && game.autoAdvance ? (
+                game.nextAt !== null ? (
+                  <button type="button" className="btn btn-outline" disabled={busy} onClick={hold}>
+                    <Pause size={18} /> Pause{nextIn !== null ? ` (${nextIn})` : ""}
+                  </button>
+                ) : (
+                  <span className="self-center text-sm font-bold text-muted">Paused</span>
+                )
+              ) : null}
               <button
                 type="button"
                 className="btn btn-danger"
