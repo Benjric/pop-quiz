@@ -75,6 +75,16 @@ export async function saveQuiz(input: QuizInput): Promise<ActionResult> {
   redirect(`/dashboard/quizzes/${quizId}`);
 }
 
+/** Deletes several quizzes (and their games) from the quiz list; stays on the page. */
+export async function deleteQuizzes(ids: string[]): Promise<{ deleted: number }> {
+  const teacherId = await requireTeacherId();
+  const parsed = z.array(z.string().min(1)).max(500).safeParse(ids);
+  if (!parsed.success || parsed.data.length === 0) return { deleted: 0 };
+  const { count } = await prisma.quiz.deleteMany({ where: { id: { in: parsed.data }, teacherId } });
+  revalidatePath("/dashboard", "layout");
+  return { deleted: count };
+}
+
 export async function deleteQuiz(id: string): Promise<void> {
   const teacherId = await requireTeacherId();
   await prisma.quiz.deleteMany({ where: { id, teacherId } });
