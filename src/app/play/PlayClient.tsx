@@ -154,7 +154,7 @@ function JoinForm({ initialPin, onJoined }: { initialPin: string; onJoined: () =
 
 // ── in the game ─────────────────────────────────────────────────────────────
 
-function InGame({ state, refresh, leave }: { state: PlayerState; refresh: () => Promise<void>; leave: () => void }) {
+export function InGame({ state, refresh, leave }: { state: PlayerState; refresh: () => Promise<void>; leave: () => void }) {
   const secondsLeft = useCountdown(state.deadline, state.serverNow);
   // At the end, hold the results until the projector has revealed the winner.
   const finaleEndsAt =
