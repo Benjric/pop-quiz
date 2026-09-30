@@ -1,4 +1,4 @@
-import { Prisma } from "@/generated/prisma/client";
+import { Prisma, type Player } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { publishGame, publishHost } from "@/lib/realtime";
 import { pickQuestions, shuffleChoices, type PickMode } from "./pickQuestions";
@@ -418,30 +418,58 @@ export async function getHostState(gameId: string): Promise<HostState | null> {
   };
 }
 
-export async function getPlayerState(playerId: string): Promise<PlayerState | null> {
-  const player = await prisma.player.findUnique({ where: { id: playerId } });
-  if (!player) return null;
-  let game = await loadFullGame(player.gameId);
+/**
+ * What one phone sees. Every phone asks for this every second or two, so it
+ * only loads what that phone needs (the current question and its own
+ * answer, plus two counts for its place), never the whole game.
+ */
+export async function getPlayerState(me: Player): Promise<PlayerState | null> {
+  const loadGame = () =>
+    prisma.game.findUnique({
+      where: { id: me.gameId },
+      include: { quiz: { select: { title: true } }, _count: { select: { questions: true } } },
+    });
+  let game = await loadGame();
   if (!game) return null;
-  if (await catchUp(game)) game = (await loadFullGame(player.gameId))!;
-
-  const me = game.players.find((p) => p.id === playerId)!;
-  const active = game.players.filter((p) => !p.kickedAt);
-  const ranked = rankPlayers(active);
-  const myRank = ranked.find((p) => p.id === playerId)?.rank ?? 0;
+  if (await catchUp(game)) game = (await loadGame())!;
 
   const status = game.status;
+  const active = { gameId: game.id, kickedAt: null };
+  const [current, playerCount, ahead, top] = await Promise.all([
+    status === "LOBBY"
+      ? null
+      : prisma.gameQuestion.findUnique({
+          where: { gameId_order: { gameId: game.id, order: game.currentIndex } },
+          select: {
+            text: true,
+            choices: true,
+            correctIndex: true,
+            answers: { where: { playerId: me.id }, select: { choiceIndex: true, correct: true, points: true } },
+          },
+        }),
+    prisma.player.count({ where: active }),
+    // Players on the same score share a place, so my rank is 1 + everyone ahead.
+    me.kickedAt ? null : prisma.player.count({ where: { ...active, score: { gt: me.score } } }),
+    status === "ENDED"
+      ? prisma.player.findMany({
+          where: active,
+          orderBy: [{ score: "desc" }, { nickname: "asc" }],
+          take: 5,
+          select: { nickname: true, score: true },
+        })
+      : [],
+  ]);
+
   const revealed = status === "REVEAL" || status === "LEADERBOARD" || status === "ENDED";
-  const current = status === "LOBBY" ? null : (game.questions[game.currentIndex] ?? null);
-  const answer = current?.answers.find((a) => a.playerId === playerId) ?? null;
   const showQuestion = status === "QUESTION" || status === "REVEAL";
+  const answer = current?.answers[0] ?? null;
 
   return {
     gameId: game.id,
     status,
     quizTitle: game.quiz.title,
     index: game.currentIndex,
-    total: game.questions.length,
+    total: game._count.questions,
     deadline: status === "QUESTION" ? deadlineOf(game) : null,
     nextAt: nextAtOf(game),
     serverNow: Date.now(),
@@ -450,8 +478,8 @@ export async function getPlayerState(playerId: string): Promise<PlayerState | nu
     me: {
       nickname: me.nickname,
       score: me.score,
-      rank: myRank,
-      playerCount: active.length,
+      rank: ahead === null ? 0 : ahead + 1,
+      playerCount,
       kicked: Boolean(me.kickedAt),
     },
     myAnswer: answer
@@ -461,9 +489,6 @@ export async function getPlayerState(playerId: string): Promise<PlayerState | nu
           points: revealed ? answer.points : null,
         }
       : null,
-    podium:
-      status === "ENDED"
-        ? ranked.slice(0, 5).map((p) => ({ nickname: p.nickname, score: p.score, rank: p.rank }))
-        : [],
+    podium: rankPlayers(top).map((p) => ({ nickname: p.nickname, score: p.score, rank: p.rank })),
   };
 }

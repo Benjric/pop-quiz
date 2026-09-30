@@ -6,7 +6,7 @@ import { getCurrentPlayer } from "@/lib/player";
 export async function GET() {
   const player = await getCurrentPlayer();
   if (!player) return NextResponse.json({ error: "Not in a game." }, { status: 401 });
-  const state = await getPlayerState(player.id);
+  const state = await getPlayerState(player);
   if (!state) return NextResponse.json({ error: "Not in a game." }, { status: 401 });
   return NextResponse.json(state, { headers: { "Cache-Control": "no-store" } });
 }
