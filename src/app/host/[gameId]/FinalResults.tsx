@@ -95,6 +95,28 @@ function PlacesList({ list, total }: { list: PodiumEntry[]; total: number }) {
   );
 }
 
+/** Podium bars: gold, silver and bronze, shaded top to bottom like metal. */
+const MEDALS = {
+  gold: {
+    name: "Gold",
+    fill: "linear-gradient(180deg, #FCE38A 0%, #F2C230 38%, #D19B0C 72%, #A87A04 100%)",
+    text: "#5A3E00",
+    glow: "rgba(209,155,12,0.8)",
+  },
+  silver: {
+    name: "Silver",
+    fill: "linear-gradient(180deg, #F4F6F9 0%, #D3D8E0 38%, #A9B1BD 72%, #858E9C 100%)",
+    text: "#3A4150",
+    glow: "rgba(133,142,156,0.8)",
+  },
+  bronze: {
+    name: "Bronze",
+    fill: "linear-gradient(180deg, #F2B98A 0%, #D98C4F 38%, #B5652B 72%, #8A4719 100%)",
+    text: "#FFFFFF",
+    glow: "rgba(181,101,43,0.8)",
+  },
+} as const;
+
 function Podium({ top, quizTitle }: { top: PodiumEntry[]; quizTitle: string }) {
   const [first, second, third] = top;
 
@@ -107,9 +129,9 @@ function Podium({ top, quizTitle }: { top: PodiumEntry[]; quizTitle: string }) {
     return playDrumRoll(CONFETTI_AT_S, landings);
   }, [places]);
   const columns = [
-    { p: second, place: 2 as const, height: "h-[24vh]", bar: "bg-ink" },
-    { p: first, place: 1 as const, height: "h-[34vh]", bar: "bg-brand" },
-    { p: third, place: 3 as const, height: "h-[16vh]", bar: "bg-ink" },
+    { p: second, place: 2 as const, height: "h-[24vh]", medal: MEDALS.silver },
+    { p: first, place: 1 as const, height: "h-[34vh]", medal: MEDALS.gold },
+    { p: third, place: 3 as const, height: "h-[16vh]", medal: MEDALS.bronze },
   ];
   return (
     <>
@@ -118,14 +140,14 @@ function Podium({ top, quizTitle }: { top: PodiumEntry[]; quizTitle: string }) {
         <p className="text-[clamp(16px,1.4vw,22px)] font-bold text-muted">{quizTitle}</p>
       </div>
       <div className="flex w-full max-w-250 flex-1 items-end justify-center gap-[2vw]">
-        {columns.map(({ p, place, height, bar }) => {
+        {columns.map(({ p, place, height, medal }) => {
           if (!p) return <div key={place} className="w-1/3" />;
           const barAt = BAR_DELAY_S[place];
           return (
             <div key={place} className="flex w-1/3 flex-col items-center gap-2">
               <div className="anim-pop flex max-w-full flex-col items-center" style={{ animationDelay: `${barAt + BAR_S - 0.2}s` }}>
                 {place === 1 ? (
-                  <svg viewBox="0 0 24 24" className="mb-1 w-[clamp(36px,4vw,60px)]" fill="#E8A317" aria-hidden>
+                  <svg viewBox="0 0 24 24" className="mb-1 w-[clamp(36px,4vw,60px)]" fill="#F2C230" stroke="#A87A04" strokeWidth="1" strokeLinejoin="round" aria-hidden>
                     <path d="M3 8 L7.5 12 L12 5 L16.5 12 L21 8 L19 19 H5 Z" />
                   </svg>
                 ) : null}
@@ -139,8 +161,16 @@ function Podium({ top, quizTitle }: { top: PodiumEntry[]; quizTitle: string }) {
                 </span>
               </div>
               <div
-                className={`anim-grow flex w-full items-start justify-center rounded-t-3xl pt-4 font-display text-[clamp(44px,5.5vw,88px)] font-extrabold text-white ${height} ${bar}`}
-                style={{ animationDelay: `${barAt}s`, animationDuration: `${BAR_S}s` }}
+                className={`anim-grow flex w-full items-start justify-center rounded-t-3xl pt-4 font-display text-[clamp(44px,5.5vw,88px)] font-extrabold ${height}`}
+                style={{
+                  background: medal.fill,
+                  color: medal.text,
+                  boxShadow: `inset 0 3px 0 rgba(255,255,255,0.45), 0 16px 36px -18px ${medal.glow}`,
+                  textShadow: medal.text === "#FFFFFF" ? "0 2px 0 rgba(0,0,0,0.2)" : "0 1px 0 rgba(255,255,255,0.5)",
+                  animationDelay: `${barAt}s`,
+                  animationDuration: `${BAR_S}s`,
+                }}
+                aria-label={`${medal.name}, place ${place}`}
               >
                 {place}
               </div>

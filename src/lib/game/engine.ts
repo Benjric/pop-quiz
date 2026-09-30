@@ -4,7 +4,6 @@ import { publishGame, publishHost } from "@/lib/realtime";
 import { pickQuestions, shuffleChoices, type PickMode } from "./pickQuestions";
 import { GRACE_MS, rankPlayers, scoreAnswer } from "./score";
 import { autoTimeLimit } from "./timing";
-import { LIST_TO } from "./finale";
 import type { GameStatus, HostState, PlayerState } from "./types";
 
 /**
@@ -454,7 +453,7 @@ export async function getPlayerState(me: Player): Promise<PlayerState | null> {
 
   const status = game.status;
   const active = { gameId: game.id, kickedAt: null };
-  const [current, playerCount, ahead, top] = await Promise.all([
+  const [current, playerCount, ahead] = await Promise.all([
     status === "LOBBY"
       ? null
       : prisma.gameQuestion.findUnique({
@@ -469,14 +468,6 @@ export async function getPlayerState(me: Player): Promise<PlayerState | null> {
     prisma.player.count({ where: active }),
     // Players on the same score share a place, so my rank is 1 + everyone ahead.
     me.kickedAt ? null : prisma.player.count({ where: { ...active, score: { gt: me.score } } }),
-    status === "ENDED"
-      ? prisma.player.findMany({
-          where: active,
-          orderBy: [{ score: "desc" }, { nickname: "asc" }],
-          take: LIST_TO,
-          select: { nickname: true, score: true },
-        })
-      : [],
   ]);
 
   const revealed = status === "REVEAL" || status === "LEADERBOARD" || status === "ENDED";
@@ -509,6 +500,5 @@ export async function getPlayerState(me: Player): Promise<PlayerState | null> {
           points: revealed ? answer.points : null,
         }
       : null,
-    podium: rankPlayers(top).map((p) => ({ nickname: p.nickname, score: p.score, rank: p.rank })),
   };
 }

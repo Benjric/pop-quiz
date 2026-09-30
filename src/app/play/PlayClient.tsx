@@ -413,27 +413,10 @@ export function InGame({ state, refresh, leave }: { state: PlayerState; refresh:
             {ordinal(me.rank)}
           </h1>
           <p className="anim-rise text-phone-lg font-bold" style={{ animationDelay: "0.6s" }}>
-            {formatNumber(me.score)} points
+            {formatNumber(me.score)} points · of {me.playerCount}
           </p>
-          {state.podium.length ? (
-            <ol className="flex w-full max-w-xs flex-col gap-2 text-left">
-              {state.podium.map((p, i) => (
-                <li
-                  key={p.nickname}
-                  className={`anim-rise flex items-center gap-3 rounded-2xl px-4 py-2 ${
-                    p.nickname === me.nickname ? "bg-[#E8A317] text-ink" : "bg-white text-ink"
-                  }`}
-                  // 10th first, the winner last.
-                  style={{ animationDelay: `${1 + (state.podium.length - 1 - i) * 0.5}s` }}
-                >
-                  <span className="w-6 shrink-0 font-display text-xl font-extrabold text-brand">{p.rank}</span>
-                  <span className="min-w-0 flex-1 truncate font-bold">{p.nickname}</span>
-                  <span className="shrink-0 font-display font-extrabold">{formatNumber(p.score)}</span>
-                </li>
-              ))}
-            </ol>
-          ) : null}
-          <div className="anim-rise" style={{ animationDelay: `${1.6 + state.podium.length * 0.5}s` }}>
+          {/* The top 3 are only shown on the big screen. */}
+          <div className="anim-rise" style={{ animationDelay: "1.2s" }}>
             <JoinAnother onClick={leave} />
           </div>
         </Screen>

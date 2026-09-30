@@ -9,8 +9,8 @@ export const LIST_FROM = 4;
 export const LIST_TO = 10;
 export const ROW_STEP_S = 0.5; // between list rows
 export const LIST_HOLD_S = 1.2; // how long the full list stays up
-export const BAR_DELAY_S = { 3: 0.2, 2: 0.9, 1: 1.6 } as const; // podium, by place
-export const BAR_S = 0.8;
+export const BAR_DELAY_S = { 3: 0.3, 2: 1.4, 1: 2.6 } as const; // podium, by place: the top 3 take their time
+export const BAR_S = 0.9;
 /** Phones reveal this long after the winner appears on the projector. */
 export const PHONE_REVEAL_AFTER_S = 0.3;
 export const WINNER_AT_S = BAR_DELAY_S[1] + BAR_S;
