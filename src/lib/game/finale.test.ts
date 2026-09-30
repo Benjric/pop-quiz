@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { finaleSeconds, listRows, WINNER_AT_S } from "./finale";
+import { finaleSeconds, listRows, PHONE_REVEAL_AFTER_S, WINNER_AT_S } from "./finale";
 
 describe("finale", () => {
   it("lists places 4 to 10 only, so the podium stays a surprise", () => {
@@ -12,7 +12,8 @@ describe("finale", () => {
 
   it("phones wait until the winner is revealed", () => {
     expect(finaleSeconds(0)).toBe(0);
-    expect(finaleSeconds(3)).toBeCloseTo(WINNER_AT_S + 0.5);
-    expect(finaleSeconds(100)).toBeGreaterThan(finaleSeconds(3) + 5);
+    expect(finaleSeconds(3)).toBeCloseTo(WINNER_AT_S + PHONE_REVEAL_AFTER_S);
+    expect(finaleSeconds(10)).toBeLessThan(8); // kept short: phones wait this long
+    expect(finaleSeconds(100)).toBe(finaleSeconds(10));
   });
 });
