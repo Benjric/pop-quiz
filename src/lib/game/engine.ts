@@ -4,6 +4,7 @@ import { publishGame, publishHost } from "@/lib/realtime";
 import { pickQuestions, shuffleChoices, type PickMode } from "./pickQuestions";
 import { GRACE_MS, rankPlayers, scoreAnswer } from "./score";
 import { autoTimeLimit } from "./timing";
+import { LIST_TO } from "./finale";
 import type { GameStatus, HostState, PlayerState } from "./types";
 
 /**
@@ -472,7 +473,7 @@ export async function getPlayerState(me: Player): Promise<PlayerState | null> {
       ? prisma.player.findMany({
           where: active,
           orderBy: [{ score: "desc" }, { nickname: "asc" }],
-          take: 7,
+          take: LIST_TO,
           select: { nickname: true, score: true },
         })
       : [],
@@ -490,6 +491,7 @@ export async function getPlayerState(me: Player): Promise<PlayerState | null> {
     total: game._count.questions,
     deadline: status === "QUESTION" ? deadlineOf(game) : null,
     nextAt: nextAtOf(game),
+    endedAt: game.endedAt ? game.endedAt.getTime() : null,
     serverNow: Date.now(),
     question: showQuestion && current ? { text: current.text, choices: current.choices } : null,
     correctIndex: revealed && current ? current.correctIndex : null,

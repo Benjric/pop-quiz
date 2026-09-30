@@ -7,6 +7,7 @@ import { nextLabel, useHostGame } from "@/lib/useHostGame";
 import type { HostState } from "@/lib/game/types";
 import { ChoiceShape, choiceStyle } from "@/components/choices";
 import { Logo } from "@/components/Logo";
+import { Credit } from "@/components/Credit";
 import { FinalResults } from "./FinalResults";
 import { formatNumber, formatPin, plural } from "@/lib/format";
 import { isMuted, playBuzzer, playCountdownBeep, playTick, setMuted, unlockSounds } from "@/lib/sounds";
@@ -207,6 +208,7 @@ function Lobby({
           <div className="flex flex-col">{startButton}</div>
         </section>
       </div>
+      <Credit tone="dark" className="pb-[2.5vh] text-[clamp(14px,1.2vw,18px)]" />
     </>
   );
 }

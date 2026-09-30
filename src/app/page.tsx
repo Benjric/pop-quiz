@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { LogoMark } from "@/components/Logo";
 import { PinForm } from "./PinForm";
+import { Credit } from "@/components/Credit";
 
 export default function Home() {
   return (
@@ -16,6 +17,7 @@ export default function Home() {
       <Link href="/login" className="text-sm font-bold text-[#E4DDFB] underline-offset-4 hover:text-white hover:underline">
         Teacher sign in
       </Link>
+      <Credit />
     </main>
   );
 }

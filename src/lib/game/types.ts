@@ -57,5 +57,8 @@ export type PlayerState = {
   correctIndex: number | null;
   me: { nickname: string; score: number; rank: number; playerCount: number; kicked: boolean };
   myAnswer: { choiceIndex: number; correct: boolean | null; points: number | null } | null;
+  /** When the game ended (epoch ms), so phones can wait out the finale. */
+  endedAt: number | null;
+  /** The top 10, once the game has ended. */
   podium: PodiumEntry[];
 };

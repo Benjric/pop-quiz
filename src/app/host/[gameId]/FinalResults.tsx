@@ -6,21 +6,23 @@ import { RotateCcw } from "lucide-react";
 import type { HostState, PodiumEntry } from "@/lib/game/types";
 import { formatNumber } from "@/lib/format";
 import { playDrumRoll } from "@/lib/sounds";
+import {
+  BAR_DELAY_S,
+  BAR_S,
+  LIST_FROM,
+  LIST_TO,
+  listSeconds,
+  ROW_STEP_S,
+  WINNER_AT_S as CONFETTI_AT_S,
+} from "@/lib/game/finale";
 
 /**
- * The end of the game on the projector, in two acts:
- *   1. Top 7: rows rise in from 7th up to 1st.
+ * The end of the game on the projector, in two acts (timing: lib/game/finale):
+ *   1. Places 10 down to 4 rise in one by one, so the top 3 stay a secret.
  *   2. Podium: 3rd, 2nd, then 1st rise up to a drum roll, and confetti falls
  *      with a crash and fanfare for the winner.
  * "Replay" runs it again. With reduced motion everything simply appears.
  */
-
-const TOP_LIST = 7; // how many the first act counts down
-const ROW_STEP_S = 0.7; // between its rows
-const LIST_HOLD_S = 3; // how long the full list stays up
-const BAR_DELAY_S = { 3: 0.3, 2: 1.4, 1: 2.6 } as const; // podium, by place
-const BAR_S = 0.9;
-const CONFETTI_AT_S = BAR_DELAY_S[1] + BAR_S;
 
 export function FinalResults({ state }: { state: HostState }) {
   const [run, setRun] = useState(0);
@@ -28,23 +30,27 @@ export function FinalResults({ state }: { state: HostState }) {
 }
 
 function Sequence({ state, onReplay }: { state: HostState; onReplay: () => void }) {
-  const top = state.leaderboard.slice(0, TOP_LIST);
-  const withList = top.length > 3;
-  const [act, setAct] = useState<"list" | "podium">(withList ? "list" : "podium");
+  const everyone = state.leaderboard;
+  const list = everyone.slice(LIST_FROM - 1, LIST_TO);
+  const [act, setAct] = useState<"list" | "podium">(list.length ? "list" : "podium");
 
+  const listMs = listSeconds(everyone.length) * 1000;
   useEffect(() => {
-    if (!withList) return;
-    const ms = ((top.length - 1) * ROW_STEP_S + 0.6 + LIST_HOLD_S) * 1000;
-    const t = setTimeout(() => setAct("podium"), ms);
+    if (!listMs) return;
+    const t = setTimeout(() => setAct("podium"), listMs);
     return () => clearTimeout(t);
-  }, [withList, top.length]);
+  }, [listMs]);
 
   return (
     <div className="relative flex flex-1 flex-col items-center gap-[3vh] overflow-hidden px-[4vw] py-[5vh]">
-      {act === "list" ? <TopList top={top} /> : <Podium top={top.slice(0, 3)} quizTitle={state.game.quizTitle} />}
-      {top.length === 0 ? <p className="text-xl font-bold text-muted">Nobody played this game.</p> : null}
+      {act === "list" ? (
+        <PlacesList list={list} total={Math.min(everyone.length, LIST_TO)} />
+      ) : (
+        <Podium top={everyone.slice(0, 3)} quizTitle={state.game.quizTitle} />
+      )}
+      {everyone.length === 0 ? <p className="text-xl font-bold text-muted">Nobody played this game.</p> : null}
       {act === "podium" ? (
-        <div className="anim-rise flex flex-wrap justify-center gap-3" style={{ animationDelay: `${top.length ? CONFETTI_AT_S + 0.8 : 0}s` }}>
+        <div className="anim-rise flex flex-wrap justify-center gap-3" style={{ animationDelay: `${everyone.length ? CONFETTI_AT_S + 0.8 : 0}s` }}>
           <button type="button" onClick={onReplay} className="btn btn-outline h-14 px-6 text-lg">
             <RotateCcw size={20} /> Replay
           </button>
@@ -60,37 +66,31 @@ function Sequence({ state, onReplay }: { state: HostState; onReplay: () => void 
   );
 }
 
-function TopList({ top }: { top: PodiumEntry[] }) {
+/** Places 4–10, revealed from the bottom (10th) up to 4th. */
+function PlacesList({ list, total }: { list: PodiumEntry[]; total: number }) {
   return (
     <>
-      <h1 className="anim-rise font-display text-[clamp(40px,4.4vw,64px)] font-extrabold">Top {top.length}</h1>
+      <h1 className="anim-rise font-display text-[clamp(40px,4.4vw,64px)] font-extrabold">Top {total}</h1>
       <ol className="flex w-full max-w-250 flex-1 flex-col justify-center gap-[1.2vh]">
-        {top.map((p, i) => {
-          const first = i === 0;
-          return (
-            <li
-              key={p.nickname}
-              className={`anim-rise flex items-center gap-6 rounded-3xl px-8 ${
-                first
-                  ? "h-[clamp(60px,9.5vh,100px)] bg-brand text-white shadow-[0_12px_32px_-12px_rgba(75,43,181,0.7)]"
-                  : "h-[clamp(48px,7.5vh,80px)] border-2 border-line bg-white"
-              }`}
-              // Last place first, the winner last.
-              style={{ animationDelay: `${(top.length - 1 - i) * ROW_STEP_S}s` }}
-            >
-              <span
-                className={`w-14 font-display text-[clamp(28px,3vw,46px)] font-extrabold ${
-                  first ? "" : i < 3 ? "text-brand" : "text-muted"
-                }`}
-              >
-                {p.rank}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-[clamp(20px,2.1vw,34px)] font-bold">{p.nickname}</span>
-              <span className="font-display text-[clamp(24px,2.5vw,40px)] font-extrabold">{formatNumber(p.score)}</span>
-            </li>
-          );
-        })}
+        {list.map((p, i) => (
+          <li
+            key={p.nickname}
+            className="anim-rise flex h-[clamp(48px,7.5vh,80px)] items-center gap-6 rounded-3xl border-2 border-line bg-white px-8"
+            // The lowest place first, 4th last.
+            style={{ animationDelay: `${(list.length - 1 - i) * ROW_STEP_S}s` }}
+          >
+            <span className="w-14 font-display text-[clamp(28px,3vw,46px)] font-extrabold text-brand">{p.rank}</span>
+            <span className="min-w-0 flex-1 truncate text-[clamp(20px,2.1vw,34px)] font-bold">{p.nickname}</span>
+            <span className="font-display text-[clamp(24px,2.5vw,40px)] font-extrabold">{formatNumber(p.score)}</span>
+          </li>
+        ))}
       </ol>
+      <p
+        className="anim-pop font-display text-[clamp(26px,2.8vw,44px)] font-extrabold text-brand"
+        style={{ animationDelay: `${list.length * ROW_STEP_S + 0.3}s` }}
+      >
+        …and now, the top 3!
+      </p>
     </>
   );
 }

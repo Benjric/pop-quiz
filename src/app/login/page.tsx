@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { LogoMark } from "@/components/Logo";
 import { LoginForm } from "./LoginForm";
+import { Credit } from "@/components/Credit";
 
 export const metadata = { title: "Teacher sign in" };
 
@@ -23,6 +24,7 @@ export default async function LoginPage(props: PageProps<"/login">) {
       <Link href="/" className="text-sm font-bold text-[#E4DDFB] hover:text-white">
         Joining a game? Enter the PIN
       </Link>
+      <Credit />
     </main>
   );
 }

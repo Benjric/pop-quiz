@@ -1,11 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Trophy } from "lucide-react";
 import { useCountdown, useLiveGame } from "@/lib/useLiveGame";
 import type { PlayerState } from "@/lib/game/types";
 import { ChoiceShape, choiceStyle } from "@/components/choices";
 import { LogoMark } from "@/components/Logo";
+import { Credit } from "@/components/Credit";
 import { formatNumber, formatPin, ordinal } from "@/lib/format";
+import { finaleSeconds } from "@/lib/game/finale";
 
 /**
  * The student's phone. Every screen fills the viewport (dvh, so mobile
@@ -144,6 +147,7 @@ function JoinForm({ initialPin, onJoined }: { initialPin: string; onJoined: () =
         </button>
       </form>
       <p className="text-center font-semibold text-[#E4DDFB]">No account or app needed</p>
+      <Credit />
     </main>
   );
 }
@@ -152,6 +156,12 @@ function JoinForm({ initialPin, onJoined }: { initialPin: string; onJoined: () =
 
 function InGame({ state, refresh, leave }: { state: PlayerState; refresh: () => Promise<void>; leave: () => void }) {
   const secondsLeft = useCountdown(state.deadline, state.serverNow);
+  // At the end, hold the results until the projector has revealed the winner.
+  const finaleEndsAt =
+    state.status === "ENDED" && state.endedAt !== null
+      ? state.endedAt + finaleSeconds(state.me.playerCount) * 1000
+      : null;
+  const finaleLeft = useCountdown(finaleEndsAt, state.serverNow);
   const nextIn = useCountdown(state.nextAt, state.serverNow);
   const [pending, setPending] = useState<{ index: number; choice: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -382,6 +392,20 @@ function InGame({ state, refresh, leave }: { state: PlayerState; refresh: () => 
       );
 
     case "ENDED":
+      if (finaleEndsAt !== null && finaleLeft !== 0) {
+        // Don't spoil the podium: the projector is still counting down.
+        return (
+          <Screen tone="brand">
+            <span className="anim-heartbeat flex aspect-square w-[clamp(80px,min(28vw,16dvh),112px)] items-center justify-center rounded-full bg-white text-brand [animation-iteration-count:infinite] [animation-duration:1s]">
+              <Trophy className="w-1/2" size={56} strokeWidth={2.5} aria-hidden />
+            </span>
+            <h1 className="anim-rise font-display text-phone-hero font-extrabold">And the winners are…</h1>
+            <p className="animate-pulse text-phone-lg font-bold text-[#E4DDFB] motion-reduce:animate-none">
+              Look at the big screen!
+            </p>
+          </Screen>
+        );
+      }
       return (
         <Screen tone="brand">
           <p className="anim-rise text-phone-lg font-bold text-[#E4DDFB]">Game over · you finished</p>
@@ -396,10 +420,10 @@ function InGame({ state, refresh, leave }: { state: PlayerState; refresh: () => 
               {state.podium.map((p, i) => (
                 <li
                   key={p.nickname}
-                  className={`anim-rise flex items-center gap-3 rounded-2xl px-4 py-2.5 ${
+                  className={`anim-rise flex items-center gap-3 rounded-2xl px-4 py-2 ${
                     p.nickname === me.nickname ? "bg-[#E8A317] text-ink" : "bg-white text-ink"
                   }`}
-                  // 7th first, the winner last, as on the big screen.
+                  // 10th first, the winner last.
                   style={{ animationDelay: `${1 + (state.podium.length - 1 - i) * 0.5}s` }}
                 >
                   <span className="w-6 shrink-0 font-display text-xl font-extrabold text-brand">{p.rank}</span>
