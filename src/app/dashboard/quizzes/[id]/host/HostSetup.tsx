@@ -8,9 +8,9 @@ import { startGame } from "../../actions";
 type Q = { id: string; text: string; hasAnswer: boolean };
 
 const PRESETS = [5, 10, 15] as const;
-const TIMES = [10, 20, 30, 60] as const;
+const TIMES = [10, 15, 20, 30, 60] as const;
 /** Rough time per question spent on the answer (and leaderboard) screens. */
-const OVERHEAD_SEC = { auto: 7, manual: 15 };
+const OVERHEAD_SEC = { auto: 12, manual: 15 };
 
 export function HostSetup({ quizId, questions }: { quizId: string; questions: Q[] }) {
   const [included, setIncluded] = useState(() => new Set(questions.filter((q) => q.hasAnswer).map((q) => q.id)));
@@ -188,7 +188,7 @@ export function HostSetup({ quizId, questions }: { quizId: string; questions: Q[
             <span>
               Go to the next question automatically
               <span className="block text-sm font-normal text-muted">
-                5 seconds after the answer shows. You can pause it any time. Off: you press Next and a leaderboard
+                10 seconds after the answer shows. You can pause it any time. Off: you press Next and a leaderboard
                 shows between questions.
               </span>
             </span>

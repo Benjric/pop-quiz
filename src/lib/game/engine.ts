@@ -31,7 +31,7 @@ export class GameError extends Error {
 const GAME_LIFETIME_MS = 24 * 60 * 60 * 1000;
 
 /** With auto-advance, how long the answer stays up before the game moves on. */
-export const AUTO_ADVANCE_MS = 5000;
+export const AUTO_ADVANCE_MS = 10_000;
 
 // ── creating ────────────────────────────────────────────────────────────────
 
