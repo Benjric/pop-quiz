@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import QRCode from "qrcode";
-import { Check, Maximize, Pause, Volume2, VolumeX, X } from "lucide-react";
-import { nextLabel, useHostGame } from "@/lib/useHostGame";
+import { Check, Maximize, Pause, RotateCcw, Square, Volume2, VolumeX, X } from "lucide-react";
+import { nextLabel, RESTART_CONFIRM, useHostGame } from "@/lib/useHostGame";
 import type { HostState } from "@/lib/game/types";
 import { ChoiceShape, choiceStyle } from "@/components/choices";
 import { Logo } from "@/components/Logo";
 import { Credit } from "@/components/Credit";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { FinalResults } from "./FinalResults";
 import { formatNumber, formatPin, plural } from "@/lib/format";
 import { isMuted, playBuzzer, playCountdownBeep, playTick, setMuted, unlockSounds } from "@/lib/sounds";
@@ -19,6 +20,7 @@ import { isMuted, playBuzzer, playCountdownBeep, playTick, setMuted, unlockSound
 export function HostScreen({ gameId }: { gameId: string }) {
   const { state, busy, error, secondsLeft, nextIn, control, next, hold } = useHostGame(gameId);
   useCountdownSounds(state?.game.status, state?.game.currentIndex, secondsLeft, nextIn);
+  const [ask, dialog] = useConfirm();
 
   if (!state) {
     return (
@@ -58,7 +60,40 @@ export function HostScreen({ gameId }: { gameId: string }) {
           {error}
         </p>
       ) : null}
-      <div className="absolute right-3 bottom-3 flex gap-1">
+      {dialog}
+      <div className="absolute right-3 bottom-3 flex items-center gap-1">
+        {state.game.status !== "ENDED" && state.game.status !== "LOBBY" ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              const ok = await ask(RESTART_CONFIRM);
+              if (ok) void control({ action: "restart" });
+            }}
+            className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-xl px-3 text-sm font-bold text-muted opacity-40 hover:bg-white hover:text-ink hover:opacity-100"
+          >
+            <RotateCcw size={16} aria-hidden /> Restart
+          </button>
+        ) : null}
+        {state.game.status !== "ENDED" ? (
+          // Faded like the other corner buttons, so the class doesn't notice it.
+          <button
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              const ok = await ask({
+                danger: true,
+                title: "End the game now?",
+                body: "Everyone sees the final results. Scores so far are kept in the report.",
+                confirmLabel: "End game",
+              });
+              if (ok) void control({ action: "end" });
+            }}
+            className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-xl px-3 text-sm font-bold text-muted opacity-40 hover:bg-white hover:text-danger hover:opacity-100"
+          >
+            <Square size={16} aria-hidden /> End game
+          </button>
+        ) : null}
         <SoundButton />
         <FullscreenButton />
       </div>
@@ -141,6 +176,7 @@ function Lobby({
   const [qr, setQr] = useState<string | null>(null);
   const host = useSyncExternalStore(noopSubscribe, () => window.location.host, () => "");
   const players = state.players.filter((p) => !p.kicked);
+  const [ask, dialog] = useConfirm();
 
   useEffect(() => {
     const url = `${window.location.origin}/play?pin=${state.game.pin}`;
@@ -151,6 +187,7 @@ function Lobby({
 
   return (
     <>
+      {dialog}
       <header className="flex items-center justify-between gap-6 border-b-2 border-line px-[4vw] py-[2vh]">
         <Logo size={40} />
         <p className="truncate text-[clamp(16px,1.4vw,22px)] font-bold text-muted">
@@ -192,8 +229,14 @@ function Lobby({
                 <li key={p.id} className="anim-pop">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (confirm(`Remove ${p.nickname} from the game?`)) onKick(p.id);
+                    onClick={async () => {
+                      const ok = await ask({
+                        danger: true,
+                        title: `Remove ${p.nickname}?`,
+                        body: "They leave the game and their phone says they were removed.",
+                        confirmLabel: "Remove",
+                      });
+                      if (ok) onKick(p.id);
                     }}
                     title={`Remove ${p.nickname}`}
                     className="group flex cursor-pointer items-center gap-2 rounded-full border-2 border-line bg-white px-5 py-2.5 text-[clamp(16px,1.4vw,22px)] font-bold hover:border-danger hover:text-danger"

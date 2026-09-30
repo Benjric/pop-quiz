@@ -165,7 +165,7 @@ export function InGame({ state, refresh, leave }: { state: PlayerState; refresh:
   const listLeft = useCountdown(listEndsAt, state.serverNow);
   const finaleLeft = useCountdown(finaleEndsAt, state.serverNow);
   const nextIn = useCountdown(state.nextAt, state.serverNow);
-  const [pending, setPending] = useState<{ index: number; choice: number } | null>(null);
+  const [pending, setPending] = useState<{ index: number; deadline: number | null; choice: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { me } = state;
 
@@ -214,7 +214,10 @@ export function InGame({ state, refresh, leave }: { state: PlayerState; refresh:
       );
 
     case "QUESTION": {
-      const answered = state.myAnswer ?? (pending?.index === state.index ? { choiceIndex: pending.choice } : null);
+      // The tap waiting on the server; tied to this question's clock so a restarted game starts clean.
+      const answered =
+        state.myAnswer ??
+        (pending?.index === state.index && pending.deadline === state.deadline ? { choiceIndex: pending.choice } : null);
       if (answered) {
         const style = choiceStyle(answered.choiceIndex);
         return (
@@ -243,7 +246,7 @@ export function InGame({ state, refresh, leave }: { state: PlayerState; refresh:
       const question = state.question!;
       const answer = async (choice: number) => {
         setError(null);
-        setPending({ index: state.index, choice });
+        setPending({ index: state.index, deadline: state.deadline, choice });
         try {
           const res = await fetch("/api/play/answer", {
             method: "POST",

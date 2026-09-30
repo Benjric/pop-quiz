@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { advance, assertTeacherOwnsGame, endGame, getHostState, holdReveal, kickPlayer, reveal } from "@/lib/game/engine";
+import {
+  advance,
+  assertTeacherOwnsGame,
+  endGame,
+  getHostState,
+  holdReveal,
+  kickPlayer,
+  restartGame,
+  reveal,
+} from "@/lib/game/engine";
 import { getTeacherId } from "@/lib/session";
 import { errorResponse, unauthorized } from "@/lib/api";
 
@@ -11,10 +20,11 @@ const Body = z.discriminatedUnion("action", [
   z.object({ action: z.literal("reveal"), index: z.number().int() }),
   z.object({ action: z.literal("hold"), index: z.number().int() }),
   z.object({ action: z.literal("end") }),
+  z.object({ action: z.literal("restart") }),
   z.object({ action: z.literal("kick"), playerId: z.string().min(1) }),
 ]);
 
-/** Teacher controls: next / reveal (timer ran out) / hold (pause the auto-advance) / end / remove a player. */
+/** Teacher controls: next / reveal (timer ran out) / hold (pause the auto-advance) / end / restart / remove a player. */
 export async function POST(request: Request, ctx: RouteContext<"/api/games/[id]/control">) {
   const teacherId = await getTeacherId();
   if (!teacherId) return unauthorized();
@@ -35,6 +45,9 @@ export async function POST(request: Request, ctx: RouteContext<"/api/games/[id]/
         break;
       case "end":
         await endGame(id);
+        break;
+      case "restart":
+        await restartGame(id);
         break;
       case "kick":
         await kickPlayer(id, body.playerId);

@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useCountdown, useLiveGame } from "@/lib/useLiveGame";
 import type { GameStatus, HostState } from "@/lib/game/types";
+import type { ConfirmOptions } from "@/components/ConfirmDialog";
 
 type Control =
   | { action: "next"; status: GameStatus; index: number }
   | { action: "reveal"; index: number }
   | { action: "hold"; index: number }
   | { action: "end" }
+  | { action: "restart" }
   | { action: "kick"; playerId: string };
 
 /**
@@ -64,23 +66,39 @@ export function useHostGame(gameId: string) {
 
   // Clocks: close the question when time is up, and move on when the answer
   // screen's countdown ends. The server ignores repeats and stale moves.
+  // Each move is remembered by its clock time, not just the question number,
+  // so a restarted game's question 1 still gets closed.
   const firedFor = useRef<string | null>(null);
   const status = state?.game.status;
   const index = state?.game.currentIndex;
+  const deadline = state?.game.deadline;
+  const nextAt = state?.game.nextAt;
   useEffect(() => {
     if (index === undefined) return;
     let move: Control | null = null;
-    if (status === "QUESTION" && secondsLeft === 0) move = { action: "reveal", index };
-    else if (status === "REVEAL" && nextIn === 0) move = { action: "next", status: "REVEAL", index };
-    if (!move) return;
-    const key = `${move.action}:${index}`;
-    if (firedFor.current === key) return;
+    let key = "";
+    if (status === "QUESTION" && secondsLeft === 0) {
+      move = { action: "reveal", index };
+      key = `reveal:${index}:${deadline}`;
+    } else if (status === "REVEAL" && nextIn === 0) {
+      move = { action: "next", status: "REVEAL", index };
+      key = `next:${index}:${nextAt}`;
+    }
+    if (!move || firedFor.current === key) return;
     firedFor.current = key;
     void control(move);
-  }, [status, index, secondsLeft, nextIn, control]);
+  }, [status, index, deadline, nextAt, secondsLeft, nextIn, control]);
 
   return { state, live, busy, error, secondsLeft, nextIn, control, next, hold };
 }
+
+/** Shared by the projector and the monitor. */
+export const RESTART_CONFIRM: ConfirmOptions = {
+  danger: true,
+  title: "Restart the game?",
+  body: "It goes back to the lobby with the same PIN and everyone stays joined, but all scores and answers so far are wiped.",
+  confirmLabel: "Restart",
+};
 
 /** What the main button does at each stage. */
 export function nextLabel(state: HostState): string | null {

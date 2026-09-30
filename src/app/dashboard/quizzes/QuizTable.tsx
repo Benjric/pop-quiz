@@ -6,6 +6,7 @@ import { Trash2 } from "lucide-react";
 import { deleteQuizzes } from "./actions";
 import { LocalTime } from "@/components/LocalTime";
 import { plural } from "@/lib/format";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 export type QuizRow = {
   id: string;
@@ -22,6 +23,7 @@ export function QuizTable({ quizzes }: { quizzes: QuizRow[] }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
+  const [ask, dialog] = useConfirm();
 
   // Ignore ticks for quizzes that are gone (e.g. deleted in another tab).
   const ticked = quizzes.filter((q) => selected.has(q.id));
@@ -35,12 +37,37 @@ export function QuizTable({ quizzes }: { quizzes: QuizRow[] }) {
       return next;
     });
 
-  const remove = (rows: QuizRow[]) => {
+  const remove = async (rows: QuizRow[]) => {
     if (rows.length === 0) return;
     const games = rows.reduce((sum, q) => sum + q.games, 0);
-    const what = rows.length === 1 ? `"${rows[0].title}"` : `${rows.length} quizzes`;
-    const reports = games ? ` Their ${plural(games, "past game")} and reports are deleted too.` : "";
-    if (!confirm(`Delete ${what}?${reports} This can't be undone.`)) return;
+    const one = rows.length === 1;
+    const shown = rows.slice(0, 5);
+    const ok = await ask({
+      danger: true,
+      title: one ? `Delete "${rows[0].title}"?` : `Delete ${rows.length} quizzes?`,
+      confirmLabel: one ? "Delete quiz" : `Delete ${rows.length} quizzes`,
+      body: (
+        <div className="flex flex-col gap-3">
+          {one ? null : (
+            <ul className="flex flex-col gap-1 rounded-xl bg-ivory px-3 py-2 text-sm text-ink">
+              {shown.map((q) => (
+                <li key={q.id} className="truncate">
+                  {q.title} <span className="text-muted">· {plural(q.questions, "question")}</span>
+                </li>
+              ))}
+              {rows.length > shown.length ? <li className="text-muted">and {rows.length - shown.length} more</li> : null}
+            </ul>
+          )}
+          <p>
+            {games
+              ? `${one ? "Its" : "Their"} ${plural(games, "past game")} and ${games === 1 ? "report" : "reports"} will be deleted too. `
+              : ""}
+            You can&apos;t undo this.
+          </p>
+        </div>
+      ),
+    });
+    if (!ok) return;
     setMessage(null);
     startTransition(async () => {
       const { deleted } = await deleteQuizzes(rows.map((q) => q.id));
@@ -63,11 +90,12 @@ export function QuizTable({ quizzes }: { quizzes: QuizRow[] }) {
 
   return (
     <div className="flex flex-col gap-3">
+      {dialog}
       <div className="flex min-h-11 flex-wrap items-center gap-3">
         {ticked.length ? (
           <>
             <span className="font-bold">{ticked.length} selected</span>
-            <button type="button" className="btn btn-danger btn-sm" disabled={pending} onClick={() => remove(ticked)}>
+            <button type="button" className="btn btn-danger btn-sm" disabled={pending} onClick={() => void remove(ticked)}>
               <Trash2 size={16} /> {pending ? "Deleting…" : "Delete selected"}
             </button>
             <button type="button" className="btn btn-outline btn-sm" disabled={pending} onClick={() => setSelected(new Set())}>
@@ -145,7 +173,7 @@ export function QuizTable({ quizzes }: { quizzes: QuizRow[] }) {
                         aria-label={`Delete ${quiz.title}`}
                         title="Delete"
                         disabled={pending}
-                        onClick={() => remove([quiz])}
+                        onClick={() => void remove([quiz])}
                         className="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg text-muted hover:bg-danger-soft hover:text-danger disabled:opacity-40"
                       >
                         <Trash2 size={18} />

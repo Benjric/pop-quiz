@@ -228,6 +228,26 @@ export async function endGame(gameId: string) {
   if (moved.count) await publishGame(gameId);
 }
 
+/**
+ * "Redo": back to the lobby with the same PIN, questions and players, and
+ * every answer and score wiped. Only while the game is running; a finished
+ * game keeps its report.
+ */
+export async function restartGame(gameId: string) {
+  const restarted = await prisma.$transaction(async (tx) => {
+    const moved = await tx.game.updateMany({
+      where: { id: gameId, status: { not: "ENDED" } },
+      data: { status: "LOBBY", currentIndex: -1, questionStartedAt: null, revealedAt: null, endedAt: null },
+    });
+    if (!moved.count) return false;
+    await tx.answer.deleteMany({ where: { gameQuestion: { gameId } } });
+    await tx.player.updateMany({ where: { gameId }, data: { score: 0, streak: 0 } });
+    return true;
+  });
+  if (!restarted) throw new GameError("This game has already ended. Host the quiz again instead.", 409);
+  await publishGame(gameId);
+}
+
 export async function kickPlayer(gameId: string, playerId: string) {
   await prisma.player.updateMany({
     where: { id: playerId, gameId, kickedAt: null },

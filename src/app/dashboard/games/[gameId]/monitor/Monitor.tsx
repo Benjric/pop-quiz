@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { ExternalLink, Pause } from "lucide-react";
-import { nextLabel, useHostGame } from "@/lib/useHostGame";
+import { ExternalLink, Pause, RotateCcw } from "lucide-react";
+import { nextLabel, RESTART_CONFIRM, useHostGame } from "@/lib/useHostGame";
 import type { HostPlayer, HostState } from "@/lib/game/types";
 import { ChoiceBadge } from "@/components/choices";
 import { formatNumber, formatPin, percent } from "@/lib/format";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 const STATUS_LABEL = {
   LOBBY: "Waiting for players",
@@ -22,6 +23,7 @@ const STATUS_LABEL = {
  */
 export function Monitor({ gameId }: { gameId: string }) {
   const { state, live, busy, error, secondsLeft, nextIn, control, next, hold } = useHostGame(gameId);
+  const [ask, dialog] = useConfirm();
 
   if (!state) return <p className="text-muted">Loading the game…</p>;
 
@@ -32,6 +34,7 @@ export function Monitor({ gameId }: { gameId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
+      {dialog}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="flex items-center gap-2 text-sm font-bold text-muted">
@@ -69,12 +72,30 @@ export function Monitor({ gameId }: { gameId: string }) {
                   <span className="self-center text-sm font-bold text-muted">Paused</span>
                 )
               ) : null}
+              {game.status !== "LOBBY" ? (
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  disabled={busy}
+                  onClick={async () => {
+                    if (await ask(RESTART_CONFIRM)) void control({ action: "restart" });
+                  }}
+                >
+                  <RotateCcw size={18} /> Restart
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="btn btn-danger"
                 disabled={busy}
-                onClick={() => {
-                  if (confirm("End the game now? Everyone sees the final results.")) void control({ action: "end" });
+                onClick={async () => {
+                  const ok = await ask({
+                    danger: true,
+                    title: "End the game now?",
+                    body: "Everyone sees the final results. Scores so far are kept in the report.",
+                    confirmLabel: "End game",
+                  });
+                  if (ok) void control({ action: "end" });
                 }}
               >
                 End game
@@ -140,8 +161,14 @@ export function Monitor({ gameId }: { gameId: string }) {
                         <button
                           type="button"
                           className="text-sm font-bold text-danger hover:underline"
-                          onClick={() => {
-                            if (confirm(`Remove ${p.nickname} from the game?`)) void control({ action: "kick", playerId: p.id });
+                          onClick={async () => {
+                            const ok = await ask({
+                              danger: true,
+                              title: `Remove ${p.nickname}?`,
+                              body: "They leave the game and their phone says they were removed.",
+                              confirmLabel: "Remove",
+                            });
+                            if (ok) void control({ action: "kick", playerId: p.id });
                           }}
                         >
                           Remove
