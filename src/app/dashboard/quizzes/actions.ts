@@ -88,6 +88,7 @@ const GameInput = z.object({
   mode: z.enum(["random", "ordered"]),
   excludedIds: z.array(z.string()).max(500),
   timeLimitSec: z.number().int().min(5).max(240),
+  autoTime: z.boolean(),
   shuffleChoices: z.boolean(),
   autoAdvance: z.boolean(),
 });

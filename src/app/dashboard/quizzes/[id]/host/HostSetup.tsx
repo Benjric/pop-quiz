@@ -4,8 +4,10 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { Minus, Plus } from "lucide-react";
 import { startGame } from "../../actions";
+import { LONG_QUESTION_CHARS, LONG_QUESTION_SEC, SHORT_QUESTION_SEC } from "@/lib/game/timing";
 
-type Q = { id: string; text: string; hasAnswer: boolean };
+/** `autoSec`: this question's time under "Auto" (15 s short, 25 s long). */
+type Q = { id: string; text: string; hasAnswer: boolean; autoSec: number };
 
 const PRESETS = [5, 10, 15] as const;
 const TIMES = [10, 15, 20, 30, 60] as const;
@@ -17,7 +19,7 @@ export function HostSetup({ quizId, questions }: { quizId: string; questions: Q[
   const available = included.size;
   const [wanted, setWanted] = useState(() => Math.min(10, available) || 1);
   const [mode, setMode] = useState<"random" | "ordered">("random");
-  const [timeLimitSec, setTimeLimitSec] = useState<number>(20);
+  const [time, setTime] = useState<number | "auto">("auto");
   const [shuffleChoices, setShuffleChoices] = useState(true);
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +27,13 @@ export function HostSetup({ quizId, questions }: { quizId: string; questions: Q[
 
   const count = Math.max(0, Math.min(wanted, available));
   const overhead = autoAdvance ? OVERHEAD_SEC.auto : OVERHEAD_SEC.manual;
-  const minutes = Math.max(1, Math.round((count * (timeLimitSec + overhead)) / 60));
+  // With Auto, estimate from the questions that can be drawn (in order: the first ones).
+  const pool = questions.filter((q) => included.has(q.id));
+  const drawn = mode === "ordered" ? pool.slice(0, count) : pool;
+  const perQuestion =
+    time === "auto" ? drawn.reduce((sum, q) => sum + q.autoSec, 0) / Math.max(1, drawn.length) : time;
+  const minutes = Math.max(1, Math.round((count * (perQuestion + overhead)) / 60));
+  const longCount = pool.filter((q) => q.autoSec === LONG_QUESTION_SEC).length;
   const missing = questions.filter((q) => !q.hasAnswer).length;
 
   const toggle = (id: string) =>
@@ -44,7 +52,8 @@ export function HostSetup({ quizId, questions }: { quizId: string; questions: Q[
         count,
         mode,
         excludedIds: questions.filter((q) => !included.has(q.id)).map((q) => q.id),
-        timeLimitSec,
+        timeLimitSec: time === "auto" ? SHORT_QUESTION_SEC : time,
+        autoTime: time === "auto",
         shuffleChoices,
         autoAdvance,
       });
@@ -97,6 +106,13 @@ export function HostSetup({ quizId, questions }: { quizId: string; questions: Q[
                   {q.text}
                   {!q.hasAnswer ? <span className="ml-2 text-sm font-bold text-warn">needs an answer</span> : null}
                 </span>
+                {time === "auto" && q.hasAnswer ? (
+                  <span
+                    className={`pill shrink-0 ${q.autoSec === LONG_QUESTION_SEC ? "bg-brand-soft text-brand" : "bg-ivory text-muted"}`}
+                  >
+                    {q.autoSec} s
+                  </span>
+                ) : null}
               </label>
             </li>
           ))}
@@ -160,12 +176,22 @@ export function HostSetup({ quizId, questions }: { quizId: string; questions: Q[
           <fieldset className="flex flex-col gap-2">
             <legend className="mb-2 font-display text-lg font-extrabold">Time per question</legend>
             <div className="flex flex-wrap gap-2">
+              <Choice active={time === "auto"} onClick={() => setTime("auto")}>
+                Auto
+              </Choice>
               {TIMES.map((t) => (
-                <Choice key={t} active={timeLimitSec === t} onClick={() => setTimeLimitSec(t)}>
+                <Choice key={t} active={time === t} onClick={() => setTime(t)}>
                   {t} s
                 </Choice>
               ))}
             </div>
+            {time === "auto" ? (
+              <p className="text-sm text-muted">
+                Short questions get {SHORT_QUESTION_SEC} s, long ones {LONG_QUESTION_SEC} s (over{" "}
+                {LONG_QUESTION_CHARS} characters, counting the choices). This quiz has {longCount} long and{" "}
+                {pool.length - longCount} short.
+              </p>
+            ) : null}
           </fieldset>
 
           <label className="flex cursor-pointer items-center gap-3 font-semibold">

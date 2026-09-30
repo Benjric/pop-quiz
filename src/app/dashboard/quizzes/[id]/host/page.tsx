@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireTeacherId } from "@/lib/session";
+import { autoTimeLimit } from "@/lib/game/timing";
 import { HostSetup } from "./HostSetup";
 
 export const metadata = { title: "Host a game" };
@@ -30,6 +31,7 @@ export default async function HostSetupPage(props: PageProps<"/dashboard/quizzes
           id: q.id,
           text: q.text,
           hasAnswer: q.correctIndex !== null,
+          autoSec: autoTimeLimit(q),
         }))}
       />
     </div>

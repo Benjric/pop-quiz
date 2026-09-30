@@ -26,6 +26,9 @@ export default async function ReportPage(props: PageProps<"/dashboard/games/[gam
 
   const players = rankPlayers(game.players);
   const total = game.questions.length;
+  const times = game.questions.map((q) => q.timeLimitSec);
+  const [fastest, slowest] = [Math.min(...times), Math.max(...times)];
+  const timing = !total ? "" : fastest === slowest ? `${fastest} s each` : `${fastest}–${slowest} s per question`;
   const allAnswers = game.questions.flatMap((q) => q.answers);
   const correctAnswers = allAnswers.filter((a) => a.correct).length;
   const averageScore = players.length ? Math.round(players.reduce((s, p) => s + p.score, 0) / players.length) : 0;
@@ -49,7 +52,7 @@ export default async function ReportPage(props: PageProps<"/dashboard/games/[gam
           </Link>
           <h1 className="mt-1 font-display text-3xl font-extrabold">Game report</h1>
           <p className="text-muted">
-            <LocalTime iso={game.createdAt.toISOString()} /> · {plural(total, "question")} · {game.timeLimitSec} s each
+            <LocalTime iso={game.createdAt.toISOString()} /> · {plural(total, "question")} · {timing}
           </p>
         </div>
         <a href={`/api/games/${game.id}/report`} className="btn btn-primary" download>

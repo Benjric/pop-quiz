@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { publishGame, publishHost } from "@/lib/realtime";
 import { pickQuestions, shuffleChoices, type PickMode } from "./pickQuestions";
 import { GRACE_MS, rankPlayers, scoreAnswer } from "./score";
+import { autoTimeLimit } from "./timing";
 import type { GameStatus, HostState, PlayerState } from "./types";
 
 /**
@@ -39,7 +40,10 @@ export type GameSettings = {
   count: number;
   mode: PickMode;
   excludedIds: string[];
+  /** Seconds per question; ignored when `autoTime` is on. */
   timeLimitSec: number;
+  /** 15 s for short questions, 25 s for long ones (see ./timing). */
+  autoTime: boolean;
   shuffleChoices: boolean;
   autoAdvance: boolean;
 };
@@ -56,12 +60,15 @@ export async function createGame(teacherId: string, quizId: string, settings: Ga
     throw new GameError("Pick at least one question that has a correct answer.");
   }
 
+  const timeOf = (q: { text: string; choices: string[] }) =>
+    settings.autoTime ? autoTimeLimit(q) : settings.timeLimitSec;
+
   const pin = await freePin();
   return prisma.game.create({
     data: {
       quizId,
       pin,
-      timeLimitSec: settings.timeLimitSec,
+      timeLimitSec: timeOf(picked[0]),
       shuffleChoices: settings.shuffleChoices,
       autoAdvance: settings.autoAdvance,
       questions: {
@@ -71,11 +78,20 @@ export async function createGame(teacherId: string, quizId: string, settings: Ga
             settings.shuffleChoices && q.type === "MULTIPLE_CHOICE"
               ? shuffleChoices(base.choices, base.correctIndex)
               : base;
-          return { order, text: q.text, ...final };
+          return { order, text: q.text, timeLimitSec: timeOf(q), ...final };
         }),
       },
     },
   });
+}
+
+/** Seconds allowed for the question at `order`, to copy onto the game when it starts. */
+async function timeLimitOf(gameId: string, order: number): Promise<number | undefined> {
+  const q = await prisma.gameQuestion.findUnique({
+    where: { gameId_order: { gameId, order } },
+    select: { timeLimitSec: true },
+  });
+  return q?.timeLimitSec;
 }
 
 async function freePin(): Promise<string> {
@@ -122,9 +138,10 @@ export async function advance(gameId: string, from: Expected) {
     case "REVEAL":
       return advanceFromReveal(gameId, from.index, { onlyIfScheduled: false });
     case "LEADERBOARD": {
+      const timeLimitSec = await timeLimitOf(gameId, from.index + 1);
       const moved = await prisma.game.updateMany({
         where: { id: gameId, status: "LEADERBOARD", currentIndex: from.index },
-        data: { status: "QUESTION", currentIndex: from.index + 1, questionStartedAt: new Date() },
+        data: { status: "QUESTION", currentIndex: from.index + 1, questionStartedAt: new Date(), timeLimitSec },
       });
       if (moved.count) await publishGame(gameId);
       return;
@@ -135,11 +152,11 @@ export async function advance(gameId: string, from: Expected) {
 }
 
 async function start(gameId: string) {
-  const total = await prisma.gameQuestion.count({ where: { gameId } });
-  if (total === 0) throw new GameError("This game has no questions.");
+  const timeLimitSec = await timeLimitOf(gameId, 0);
+  if (timeLimitSec === undefined) throw new GameError("This game has no questions.");
   const moved = await prisma.game.updateMany({
     where: { id: gameId, status: "LOBBY" },
-    data: { status: "QUESTION", currentIndex: 0, questionStartedAt: new Date() },
+    data: { status: "QUESTION", currentIndex: 0, questionStartedAt: new Date(), timeLimitSec },
   });
   if (moved.count) await publishGame(gameId);
 }
@@ -156,6 +173,7 @@ async function advanceFromReveal(gameId: string, index: number, { onlyIfSchedule
   });
   if (!game) return;
   const last = index >= game._count.questions - 1;
+  const timeLimitSec = last || !game.autoAdvance ? undefined : await timeLimitOf(gameId, index + 1);
   const where = {
     id: gameId,
     status: "REVEAL" as const,
@@ -165,7 +183,7 @@ async function advanceFromReveal(gameId: string, index: number, { onlyIfSchedule
   const data: Prisma.GameUpdateManyMutationInput = last
     ? { status: "ENDED", endedAt: new Date(), revealedAt: null }
     : game.autoAdvance
-      ? { status: "QUESTION", currentIndex: index + 1, questionStartedAt: new Date(), revealedAt: null }
+      ? { status: "QUESTION", currentIndex: index + 1, questionStartedAt: new Date(), timeLimitSec, revealedAt: null }
       : { status: "LEADERBOARD", revealedAt: null };
   const moved = await prisma.game.updateMany({ where, data });
   if (moved.count) await publishGame(gameId);

@@ -72,6 +72,8 @@ model Game {
   // -1 while in the lobby; otherwise the `order` of the current GameQuestion.
   currentIndex      Int        @default(-1)
   questionStartedAt DateTime?
+  // The current question's time limit, copied from its GameQuestion when it
+  // starts, so the deadline and scoring only need the game row.
   timeLimitSec      Int
   shuffleChoices    Boolean    @default(false)
   // Move on by itself a few seconds after each answer is shown.
@@ -97,6 +99,8 @@ model GameQuestion {
   text         String
   choices      String[]
   correctIndex Int
+  // Seconds to answer this question (fixed per game, or by length with Auto).
+  timeLimitSec Int
 
   game    Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
   answers Answer[]
