@@ -59,4 +59,6 @@ export type PlayerState = {
   myAnswer: { choiceIndex: number; correct: boolean | null; points: number | null } | null;
   /** When the game ended (epoch ms), so phones can wait out the finale. */
   endedAt: number | null;
+  /** Once ended: places 4–10, for the phone's countdown. Never the top 3. */
+  places: PodiumEntry[];
 };

@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Trophy } from "lucide-react";
 import { useCountdown, useLiveGame } from "@/lib/useLiveGame";
-import type { PlayerState } from "@/lib/game/types";
+import type { PlayerState, PodiumEntry } from "@/lib/game/types";
 import { ChoiceShape, choiceStyle } from "@/components/choices";
 import { LogoMark } from "@/components/Logo";
 import { Credit } from "@/components/Credit";
 import { formatNumber, formatPin, ordinal } from "@/lib/format";
-import { finaleSeconds } from "@/lib/game/finale";
+import { finaleSeconds, LIST_TO, listSeconds, ROW_STEP_S } from "@/lib/game/finale";
 
 /**
  * The student's phone. Every screen fills the viewport (dvh, so mobile
@@ -156,11 +156,13 @@ function JoinForm({ initialPin, onJoined }: { initialPin: string; onJoined: () =
 
 export function InGame({ state, refresh, leave }: { state: PlayerState; refresh: () => Promise<void>; leave: () => void }) {
   const secondsLeft = useCountdown(state.deadline, state.serverNow);
-  // At the end, hold the results until the projector has revealed the winner.
-  const finaleEndsAt =
-    state.status === "ENDED" && state.endedAt !== null
-      ? state.endedAt + finaleSeconds(state.me.playerCount) * 1000
-      : null;
+  // At the end, follow the projector: places 10–4 count down, then wait while
+  // the podium plays, and only then show this player's own result.
+  const ended = state.status === "ENDED" && state.endedAt !== null ? state.endedAt : null;
+  const listEndsAt =
+    ended !== null && state.places.length ? ended + listSeconds(state.me.playerCount) * 1000 : null;
+  const finaleEndsAt = ended !== null ? ended + finaleSeconds(state.me.playerCount) * 1000 : null;
+  const listLeft = useCountdown(listEndsAt, state.serverNow);
   const finaleLeft = useCountdown(finaleEndsAt, state.serverNow);
   const nextIn = useCountdown(state.nextAt, state.serverNow);
   const [pending, setPending] = useState<{ index: number; choice: number } | null>(null);
@@ -392,6 +394,19 @@ export function InGame({ state, refresh, leave }: { state: PlayerState; refresh:
       );
 
     case "ENDED":
+      if (listEndsAt !== null && listLeft !== 0) {
+        return (
+          <Screen tone="brand">
+            <PlacesCountdown
+              places={state.places}
+              me={me.nickname}
+              total={Math.min(me.playerCount, LIST_TO)}
+              // How far into the finale this phone is, so it matches the projector.
+              elapsedS={(state.serverNow - ended!) / 1000}
+            />
+          </Screen>
+        );
+      }
       if (finaleEndsAt !== null && finaleLeft !== 0) {
         // Don't spoil the podium: the projector is still counting down.
         return (
@@ -425,6 +440,49 @@ export function InGame({ state, refresh, leave }: { state: PlayerState; refresh:
 }
 
 // ── pieces ──────────────────────────────────────────────────────────────────
+
+/** Places 10 down to 4, rising in with the projector (never the top 3). */
+function PlacesCountdown({
+  places,
+  me,
+  total,
+  elapsedS,
+}: {
+  places: PodiumEntry[];
+  me: string;
+  total: number;
+  elapsedS: number;
+}) {
+  // Fixed when the list first shows; later refreshes mustn't restart the rows.
+  const [offset] = useState(elapsedS);
+  return (
+    <>
+      <h1 className="anim-rise font-display text-phone-hero font-extrabold">Top {total}</h1>
+      <ol className="flex w-full max-w-xs flex-col gap-2 text-left">
+        {places.map((p, i) => (
+          <li
+            key={p.nickname}
+            className={`anim-rise flex items-center gap-3 rounded-2xl px-4 py-2 text-ink ${
+              p.nickname === me ? "bg-[#E8A317]" : "bg-white"
+            }`}
+            // The lowest place first, 4th last — in step with the big screen.
+            style={{ animationDelay: `${(places.length - 1 - i) * ROW_STEP_S - offset}s` }}
+          >
+            <span className="w-7 shrink-0 font-display text-xl font-extrabold text-brand">{p.rank}</span>
+            <span className="min-w-0 flex-1 truncate font-bold">{p.nickname}</span>
+            <span className="shrink-0 font-display font-extrabold">{formatNumber(p.score)}</span>
+          </li>
+        ))}
+      </ol>
+      <p
+        className="anim-pop font-display text-[clamp(20px,6vw,26px)] font-extrabold"
+        style={{ animationDelay: `${places.length * ROW_STEP_S + 0.3 - offset}s` }}
+      >
+        …and now, the top 3!
+      </p>
+    </>
+  );
+}
 
 const TONES = {
   brand: "bg-brand text-white",

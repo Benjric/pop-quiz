@@ -4,6 +4,7 @@ import { publishGame, publishHost } from "@/lib/realtime";
 import { pickQuestions, shuffleChoices, type PickMode } from "./pickQuestions";
 import { GRACE_MS, rankPlayers, scoreAnswer } from "./score";
 import { autoTimeLimit } from "./timing";
+import { LIST_FROM, LIST_TO } from "./finale";
 import type { GameStatus, HostState, PlayerState } from "./types";
 
 /**
@@ -453,7 +454,7 @@ export async function getPlayerState(me: Player): Promise<PlayerState | null> {
 
   const status = game.status;
   const active = { gameId: game.id, kickedAt: null };
-  const [current, playerCount, ahead] = await Promise.all([
+  const [current, playerCount, ahead, topTen] = await Promise.all([
     status === "LOBBY"
       ? null
       : prisma.gameQuestion.findUnique({
@@ -468,6 +469,14 @@ export async function getPlayerState(me: Player): Promise<PlayerState | null> {
     prisma.player.count({ where: active }),
     // Players on the same score share a place, so my rank is 1 + everyone ahead.
     me.kickedAt ? null : prisma.player.count({ where: { ...active, score: { gt: me.score } } }),
+    status === "ENDED"
+      ? prisma.player.findMany({
+          where: active,
+          orderBy: [{ score: "desc" }, { nickname: "asc" }],
+          take: LIST_TO,
+          select: { nickname: true, score: true },
+        })
+      : [],
   ]);
 
   const revealed = status === "REVEAL" || status === "LEADERBOARD" || status === "ENDED";
@@ -483,6 +492,10 @@ export async function getPlayerState(me: Player): Promise<PlayerState | null> {
     deadline: status === "QUESTION" ? deadlineOf(game) : null,
     nextAt: nextAtOf(game),
     endedAt: game.endedAt ? game.endedAt.getTime() : null,
+    // Places 4-10 for the phone's countdown; the top 3 stay on the big screen.
+    places: rankPlayers(topTen)
+      .slice(LIST_FROM - 1)
+      .map((p) => ({ nickname: p.nickname, score: p.score, rank: p.rank })),
     serverNow: Date.now(),
     question: showQuestion && current ? { text: current.text, choices: current.choices } : null,
     correctIndex: revealed && current ? current.correctIndex : null,
