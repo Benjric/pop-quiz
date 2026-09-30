@@ -1,11 +1,13 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { ArrowDown, ArrowUp, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Plus, Shuffle, Trash2, Undo2, X } from "lucide-react";
 import { saveQuiz } from "./actions";
 import { ChoiceBadge } from "@/components/choices";
 import type { SkippedItem } from "@/lib/extract/types";
 import { plural } from "@/lib/format";
+import { shuffle } from "@/lib/game/pickQuestions";
+import { choiceLetter, LIMITS } from "@/lib/quizLimits";
 
 type QuestionType = "MULTIPLE_CHOICE" | "TRUE_FALSE";
 
@@ -18,7 +20,6 @@ export type EditableQuestion = {
 
 type Row = EditableQuestion & { key: number };
 
-const MAX_CHOICES = 6;
 const TRUE_FALSE = ["True", "False"];
 
 /**
@@ -49,10 +50,31 @@ export function QuizEditor({
 
   const missing = rows.filter((q) => q.correctIndex === null).length;
 
+  // The order before the last shuffle, so a shuffle can be undone.
+  const [beforeShuffle, setBeforeShuffle] = useState<Row[] | null>(null);
+
   const change = (updater: (rows: Row[]) => Row[]) => {
     setRows(updater);
     setDirty(true);
     setError(null);
+    setBeforeShuffle(null);
+  };
+
+  /** New order, same numbering: whatever lands on top becomes question 1. */
+  const shuffleQuestions = () => {
+    const previous = beforeShuffle ?? rows;
+    let next = shuffle(rows);
+    // Never "shuffle" into the same order.
+    for (let i = 0; i < 5 && next.every((r, j) => r.key === rows[j].key); i++) next = shuffle(rows);
+    setRows(next);
+    setBeforeShuffle(previous);
+    setDirty(true);
+    setError(null);
+  };
+  const undoShuffle = () => {
+    if (!beforeShuffle) return;
+    setRows(beforeShuffle);
+    setBeforeShuffle(null);
   };
   const update = (key: number, patch: Partial<EditableQuestion>) =>
     change((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -79,7 +101,10 @@ export function QuizEditor({
   const save = () => {
     const problem = findProblem(title, rows);
     if (problem) {
-      setError(problem);
+      setError(problem.message);
+      if (problem.rowKey !== undefined) {
+        document.getElementById(`question-${problem.rowKey}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
       return;
     }
     startSaving(async () => {
@@ -108,12 +133,28 @@ export function QuizEditor({
             setTitle(e.target.value);
             setDirty(true);
           }}
-          maxLength={120}
+          maxLength={LIMITS.title}
           className="field h-12 font-display text-xl font-extrabold"
         />
       </label>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="order-last ml-auto flex gap-2">
+          {beforeShuffle ? (
+            <button type="button" onClick={undoShuffle} className="btn btn-outline btn-sm">
+              <Undo2 size={16} /> Undo shuffle
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={shuffleQuestions}
+            disabled={rows.length < 2}
+            className="btn btn-outline btn-sm"
+            title="Mix up the question order. Numbers stay 1, 2, 3… from the top."
+          >
+            <Shuffle size={16} /> Shuffle questions
+          </button>
+        </div>
         <span className="pill bg-brand-soft text-brand">{plural(rows.length, "question")}</span>
         {missing ? (
           <span className="pill bg-warn-soft text-warn">{missing} need a correct answer</span>
@@ -150,18 +191,28 @@ export function QuizEditor({
 
       <ol className="flex flex-col gap-4">
         {rows.map((row, index) => (
-          <li key={row.key} className={`card flex flex-col gap-4 p-5 ${row.correctIndex === null ? "border-[#EBC46A]" : ""}`}>
+          <li
+            key={row.key}
+            id={`question-${row.key}`}
+            className={`card flex scroll-mt-6 flex-col gap-4 p-5 ${
+              rowTooLong(row) ? "border-danger" : row.correctIndex === null ? "border-[#EBC46A]" : ""
+            }`}
+          >
             <div className="flex items-start gap-3">
               <span className="mt-2.5 w-8 shrink-0 font-display text-lg font-extrabold text-brand">{index + 1}</span>
-              <textarea
-                aria-label={`Question ${index + 1}`}
-                value={row.text}
-                onChange={(e) => update(row.key, { text: e.target.value })}
-                rows={2}
-                maxLength={500}
-                placeholder="Type the question"
-                className="field h-auto min-h-11 flex-1 resize-y py-2 font-semibold"
-              />
+              <div className="flex flex-1 flex-col gap-1">
+                <textarea
+                  aria-label={`Question ${index + 1}`}
+                  value={row.text}
+                  onChange={(e) => update(row.key, { text: e.target.value })}
+                  rows={2}
+                  placeholder="Type the question"
+                  className={`field h-auto min-h-11 resize-y py-2 font-semibold ${
+                    row.text.trim().length > LIMITS.question ? "border-danger" : ""
+                  }`}
+                />
+                <TooLong length={row.text.trim().length} limit={LIMITS.question} />
+              </div>
               <div className="flex shrink-0 gap-1">
                 <IconButton label="Move up" disabled={index === 0} onClick={() => move(index, -1)}>
                   <ArrowUp size={18} />
@@ -195,16 +246,24 @@ export function QuizEditor({
                   {row.type === "TRUE_FALSE" ? (
                     <span className="flex h-11 flex-1 items-center px-1 font-semibold">{choice}</span>
                   ) : (
-                    <input
-                      aria-label={`Choice ${ci + 1}`}
-                      value={choice}
-                      maxLength={200}
-                      placeholder={`Choice ${ci + 1}`}
-                      onChange={(e) =>
-                        update(row.key, { choices: row.choices.map((c, j) => (j === ci ? e.target.value : c)) })
-                      }
-                      className={`field flex-1 ${row.correctIndex === ci ? "border-[#1D7A4C] bg-success-soft" : ""}`}
-                    />
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                      <input
+                        aria-label={`Choice ${choiceLetter(ci)}`}
+                        value={choice}
+                        placeholder={`Choice ${choiceLetter(ci)}`}
+                        onChange={(e) =>
+                          update(row.key, { choices: row.choices.map((c, j) => (j === ci ? e.target.value : c)) })
+                        }
+                        className={`field ${
+                          choice.trim().length > LIMITS.choice
+                            ? "border-danger"
+                            : row.correctIndex === ci
+                              ? "border-success bg-success-soft"
+                              : ""
+                        }`}
+                      />
+                      <TooLong length={choice.trim().length} limit={LIMITS.choice} />
+                    </div>
                   )}
                   {row.type === "MULTIPLE_CHOICE" && row.choices.length > 2 ? (
                     <IconButton
@@ -227,7 +286,7 @@ export function QuizEditor({
                 </div>
               ))}
               <div className="flex flex-wrap items-center gap-3 pt-1">
-                {row.type === "MULTIPLE_CHOICE" && row.choices.length < MAX_CHOICES ? (
+                {row.type === "MULTIPLE_CHOICE" && row.choices.length < LIMITS.maxChoices ? (
                   <button
                     type="button"
                     onClick={() => update(row.key, { choices: [...row.choices, ""] })}
@@ -281,14 +340,43 @@ export function QuizEditor({
   );
 }
 
-function findProblem(title: string, rows: Row[]): string | null {
-  if (!title.trim()) return "Give the quiz a title.";
-  if (rows.length === 0) return "Keep at least one question.";
+type Problem = { message: string; rowKey?: number };
+
+/** The first thing that would stop the quiz saving, said so it can be found. */
+function findProblem(title: string, rows: Row[]): Problem | null {
+  if (!title.trim()) return { message: "Give the quiz a title." };
+  if (rows.length === 0) return { message: "Keep at least one question." };
   for (const [i, row] of rows.entries()) {
-    if (!row.text.trim()) return `Question ${i + 1} has no text.`;
-    if (row.choices.some((c) => !c.trim())) return `Question ${i + 1} has an empty choice. Fill it in or remove it.`;
+    const at = (message: string) => ({ message: `Question ${i + 1}: ${message}`, rowKey: row.key });
+    const text = row.text.trim();
+    if (!text) return at("type the question.");
+    if (text.length > LIMITS.question) {
+      return at(`the question is ${text.length} characters; the limit is ${LIMITS.question}. Shorten it.`);
+    }
+    for (const [ci, raw] of row.choices.entries()) {
+      const choice = raw.trim();
+      if (!choice) return at(`choice ${choiceLetter(ci)} is empty. Fill it in or remove it.`);
+      if (choice.length > LIMITS.choice) {
+        return at(
+          `choice ${choiceLetter(ci)} is ${choice.length} characters; the limit is ${LIMITS.choice}. It probably picked up extra text from the file — delete the extra part.`,
+        );
+      }
+    }
   }
   return null;
+}
+
+function rowTooLong(row: Row): boolean {
+  return row.text.trim().length > LIMITS.question || row.choices.some((c) => c.trim().length > LIMITS.choice);
+}
+
+function TooLong({ length, limit }: { length: number; limit: number }) {
+  if (length <= limit) return null;
+  return (
+    <span className="text-sm font-bold text-danger">
+      {length} / {limit} characters — delete {length - limit} or more
+    </span>
+  );
 }
 
 function IconButton({

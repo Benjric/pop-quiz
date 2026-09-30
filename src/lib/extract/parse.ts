@@ -125,6 +125,12 @@ export function parseQuestionsFromText(input: string): ExtractionResult {
       // otherwise to the question itself.
       if (lastWasChoice && current.choices.length > 0) {
         const last = current.choices[current.choices.length - 1];
+        if (!continuesChoice(last.text, line)) {
+          // A heading, footer or new paragraph after the choices: the
+          // question is over, and this line isn't part of any question.
+          flush();
+          continue;
+        }
         last.text = `${last.text} ${line}`.trim();
       } else {
         current.text = `${current.text} ${line}`.trim();
@@ -196,6 +202,22 @@ function normalize(input: string): string[] {
 
 function stripMarkers(s: string): string {
   return s.replace(/\*\*/g, "").replace(/^\*+|\*+$/g, "").trim();
+}
+
+/** Longest a choice may grow by picking up wrapped lines. */
+const MAX_WRAPPED_CHOICE = 160;
+
+/**
+ * Whether a line after a choice is that choice wrapping onto the next line,
+ * rather than a heading ("IDENTIFICATION", "Matching Type:"), a footer
+ * ("Prepared by: …") or a page header repeated by the PDF.
+ */
+function continuesChoice(choice: string, line: string): boolean {
+  const letters = line.replace(/[^a-z]/gi, "");
+  if (letters.length >= 4 && letters === letters.toUpperCase()) return false;
+  if (/:\s*$/.test(line)) return false;
+  if (/^(?:prepared|checked|noted|approved|reviewed|submitted)\s+by\b/i.test(line)) return false;
+  return choice.length + 1 + line.length <= MAX_WRAPPED_CHOICE;
 }
 
 function looksLikeListOfNumbers(line: string): boolean {

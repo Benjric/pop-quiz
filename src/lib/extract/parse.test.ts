@@ -93,6 +93,29 @@ describe("parseQuestionsFromText", () => {
     const result = parseQuestionsFromText("1. Which of the following is\nthe closest planet to the Sun?\nA. Mercury\nB. Venus");
     expect(result.questions[0].text).toBe("Which of the following is the closest planet to the Sun?");
   });
+
+  it("joins a choice that wraps onto a second line", () => {
+    const result = parseQuestionsFromText("1. Why do we have seasons?\nA. The Earth's axis is tilted\nas it goes around the Sun\nB. The Sun gets hotter");
+    expect(result.questions[0].choices[0]).toBe("The Earth's axis is tilted as it goes around the Sun");
+  });
+
+  it("does not glue headings, footers or passages onto the last choice", () => {
+    const passage =
+      "Read the passage below. The water cycle describes how water evaporates from the surface of the earth, rises into the atmosphere, cools and condenses into clouds, and falls again as precipitation.";
+    const text = [
+      "1. Which is a mammal? A. Shark B. Whale",
+      "IDENTIFICATION",
+      "2. Which is a bird? A. Bat B. Owl",
+      "Prepared by: Ms. Cruz",
+      "3. Which is a reptile? A. Frog B. Snake",
+      "Matching Type:",
+      "4. Which is an insect? A. Ant B. Spider",
+      passage,
+      "5. What falls as rain? A. Water B. Sand",
+    ].join("\n");
+    const result = parseQuestionsFromText(text);
+    expect(result.questions.map((q) => q.choices.at(-1))).toEqual(["Whale", "Owl", "Snake", "Spider", "Sand"]);
+  });
 });
 
 describe("parseQuestionsFromRows", () => {

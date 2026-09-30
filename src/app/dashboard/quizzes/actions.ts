@@ -6,14 +6,25 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireTeacherId } from "@/lib/session";
 import { createGame, GameError } from "@/lib/game/engine";
+import { LIMITS } from "@/lib/quizLimits";
 
 const QuestionInput = z
   .object({
-    text: z.string().trim().min(1, "Every question needs text.").max(500),
+    text: z
+      .string()
+      .trim()
+      .min(1, "Every question needs text.")
+      .max(LIMITS.question, `A question is longer than ${LIMITS.question} characters. Shorten it.`),
     choices: z
-      .array(z.string().trim().min(1, "Answer choices can't be empty.").max(200))
-      .min(2, "Every question needs at least 2 choices.")
-      .max(6, "A question can have at most 6 choices."),
+      .array(
+        z
+          .string()
+          .trim()
+          .min(1, "Answer choices can't be empty.")
+          .max(LIMITS.choice, `An answer choice is longer than ${LIMITS.choice} characters. Shorten it.`),
+      )
+      .min(LIMITS.minChoices, "Every question needs at least 2 choices.")
+      .max(LIMITS.maxChoices, "A question can have at most 6 choices."),
     correctIndex: z.number().int().min(0).nullable(),
     type: z.enum(["MULTIPLE_CHOICE", "TRUE_FALSE"]),
   })
@@ -21,9 +32,16 @@ const QuestionInput = z
 
 const QuizInput = z.object({
   id: z.string().optional(),
-  title: z.string().trim().min(1, "Give the quiz a title.").max(120),
+  title: z
+    .string()
+    .trim()
+    .min(1, "Give the quiz a title.")
+    .max(LIMITS.title, `Keep the title to ${LIMITS.title} characters.`),
   sourceFileName: z.string().max(255).nullable().optional(),
-  questions: z.array(QuestionInput).min(1, "Keep at least one question.").max(500),
+  questions: z
+    .array(QuestionInput)
+    .min(1, "Keep at least one question.")
+    .max(LIMITS.questions, `A quiz can have at most ${LIMITS.questions} questions.`),
 });
 
 export type QuizInput = z.input<typeof QuizInput>;
